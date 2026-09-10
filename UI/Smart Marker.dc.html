@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics=""><link rel="stylesheet" href="industry.css"><style>
+body{margin:0;background:#c8ccc9;font-family:var(--font-body);display:grid;place-items:center;min-height:100vh}
+@keyframes sm-pulse{0%{opacity:.55;transform:scale(1)}70%{opacity:0;transform:scale(2.1)}100%{opacity:0;transform:scale(2.1)}}
+@keyframes sm-blink{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes sm-spin{to{transform:rotate(360deg)}}
+@keyframes sm-shimmer{0%,100%{opacity:1;r:7}50%{opacity:.25;r:11}}
+@keyframes sm-shimmer-ring{0%{opacity:.7;stroke-width:3}100%{opacity:0;stroke-width:1}}
+</style></helmet>
+<div style="width:1204px;height:860px;flex:none;background:var(--color-bg);color:var(--color-text);display:grid;grid-template-columns:74px 1fr;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.35);border:10px solid #14171a;border-radius:14px">
+
+  <nav style="display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; border-right: 1px solid var(--color-divider); background-color: #FFFFFF">
+    <img src="uploads/logo-1788879302370-hfbr.png" alt="Smart Marker" style="width:30px;height:30px;margin-bottom:10px">
+    <button onClick="{{ goPlan }}" title="Plan" style="{{ tabPlan }}" style-hover="filter:brightness(.96)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 5.5 9 3l6 2.5L21 3v15.5L15 21l-6-2.5L3 21z"></path><path d="M9 3v15.5M15 5.5V21"></path></svg>
+      <span style="font:600 9px/1 var(--font-heading);letter-spacing:.08em">PLAN</span>
+    </button>
+    <button onClick="{{ goImport }}" title="Plans" style="{{ tabImport }}" style-hover="filter:brightness(.96)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5M12 18v-6M9 15l3 3 3-3"></path></svg>
+      <span style="font:600 9px/1 var(--font-heading);letter-spacing:.08em">PLANS</span>
+    </button>
+    <button onClick="{{ goSetup }}" title="Positioning" style="{{ tabSetup }}" style-hover="filter:brightness(.96)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8"></circle><path d="M12 1v6M12 17v6M1 12h6M17 12h6"></path><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"></circle></svg>
+      <span style="font:600 9px/1 var(--font-heading);letter-spacing:.08em">POSE</span>
+    </button>
+    <div style="flex:1"></div>
+    <button onClick="{{ goSettings }}" title="Settings" style="{{ tabSettings }}" style-hover="filter:brightness(.96)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"></circle><path d="M10.7 2.4h2.6l.4 2.1 1.9.8 1.8-1.2 1.8 1.8-1.2 1.8.8 1.9 2.1.4v2.6l-2.1.4-.8 1.9 1.2 1.8-1.8 1.8-1.8-1.2-1.9.8-.4 2.1h-2.6l-.4-2.1-1.9-.8-1.8 1.2-1.8-1.8 1.2-1.8-.8-1.9-2.1-.4v-2.6l2.1-.4.8-1.9-1.2-1.8 1.8-1.8 1.8 1.2 1.9-.8z"></path></svg>
+      <span style="font:600 9px/1 var(--font-heading);letter-spacing:.08em">SETTINGS</span>
+    </button>
+  </nav>
+
+  <div style="display:flex;flex-direction:column;min-width:0;position:relative">
+
+    <header style="height:56px;flex:none;display:flex;align-items:center;gap:14px;padding:0 16px;border-bottom:1px solid var(--color-divider)">
+      <div style="display:flex;flex-direction:column;line-height:1.05">
+        <span style="font:600 17px var(--font-heading);letter-spacing:-.01em">Smart Marker</span>
+        <span style="font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 52%,transparent)">{{ jobName }}</span>
+      </div>
+      <div style="width:1px;height:28px;background:var(--color-divider)"></div>
+      <span style="font:600 13px var(--font-heading);letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent-700)">{{ screenTitle }}</span>
+      <div style="flex:1"></div>
+
+      <div style="{{ laserChipStyle }}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l2.5 2.5M16.5 16.5 19 19M19 5l-2.5 2.5M7.5 16.5 5 19"></path></svg>
+        <span>{{ laserChipText }}</span>
+      </div>
+
+      <button onClick="{{ goSetup }}" style="{{ poseChipStyle }}">
+        <sc-if value="{{ poseOk }}" hint-placeholder-val="{{ true }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"></circle><path d="M12 4v16M4 12h16"></path></svg>
+        </sc-if>
+        <sc-if value="{{ poseWarn }}" hint-placeholder-val="{{ false }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2.5 20h19z"></path><path d="M12 9v5"></path><circle cx="12" cy="17.2" r="1" fill="currentColor" stroke="none"></circle></svg>
+        </sc-if>
+        <span>{{ poseChipText }}</span>
+      </button>
+
+      <button onClick="{{ toggleConn }}" style="display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;background:transparent;border:1px solid var(--color-divider);cursor:pointer;font:400 12px var(--font-body);color:var(--color-text)" style-hover="background:color-mix(in srgb,var(--color-text) 6%,transparent)">
+        <span style="width:8px;height:8px;background:{{ linkDot }};animation:sm-blink 1.6s infinite"></span>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.5 8.5a15 15 0 0 1 19 0M5.5 12a10.5 10.5 0 0 1 13 0M8.5 15.4a6 6 0 0 1 7 0"></path><circle cx="12" cy="19" r="1.3" fill="currentColor" stroke="none"></circle></svg>
+        <span style="letter-spacing:.06em;font:600 11px var(--font-heading);text-transform:uppercase">{{ linkText }}</span>
+      </button>
+
+      <div style="width:1px;height:28px;background:var(--color-divider)"></div>
+
+      <button onClick="{{ toggleUser }}" style="display:flex;align-items:center;gap:9px;height:38px;padding:0 10px 0 4px;background:transparent;border:1px solid transparent;cursor:pointer;color:var(--color-text)" style-hover="border-color:var(--color-divider)">
+        <span style="width:30px;height:30px;flex:none;display:grid;place-items:center;background:var(--color-accent);color:var(--color-bg);font:600 12px var(--font-heading);letter-spacing:.04em">{{ userInitials }}</span>
+        <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.15">
+          <span style="font:600 12.5px var(--font-heading)">{{ userName }}</span>
+          <span style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 52%,transparent)">{{ userRole }}</span>
+        </span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"></path></svg>
+      </button>
+
+      <sc-if value="{{ userOpen }}" hint-placeholder-val="{{ false }}">
+        <div class="blueprint" style="position:absolute;top:52px;right:12px;width:220px;padding:12px;background:var(--color-bg);z-index:6;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow-lg)">
+          <i class="corner tl"></i><i class="corner br"></i>
+          <span style="font:400 11.5px var(--font-body);color:color-mix(in srgb,var(--color-text) 60%,transparent)">Signed in as {{ userEmail }}</span>
+          <button class="btn btn-secondary btn-block" onClick="{{ noop }}">Switch site</button>
+          <button class="btn btn-ghost" onClick="{{ noop }}">Sign out</button>
+        </div>
+      </sc-if>
+    </header>
+
+    <sc-if value="{{ showPlan }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:1;display:flex;min-height:0">
+      <div style="flex:1;position:relative;min-width:0;background:var(--color-bg);overflow:hidden;touch-action:none;cursor:{{ canvasCursor }}" onPointerDown="{{ onDown }}" onPointerMove="{{ onMove }}" onPointerUp="{{ onUp }}" onPointerCancel="{{ onUp }}" onWheel="{{ onWheel }}">
+        <svg width="100%" height="100%" viewBox="0 0 1110 784" preserveAspectRatio="none" style="display:block;position:absolute;inset:0">
+          <defs>
+            <pattern id="smgrid" width="{{ gridPx }}" height="{{ gridPx }}" patternUnits="userSpaceOnUse" x="{{ gridX }}" y="{{ gridY }}">
+              <path d="M0 0V{{ gridPx }}" stroke="#14171a" stroke-opacity="0.07" stroke-width="1"></path>
+              <path d="M0 0H{{ gridPx }}" stroke="#14171a" stroke-opacity="0.07" stroke-width="1"></path>
+            </pattern>
+          </defs>
+          <sc-if value="{{ grid }}" hint-placeholder-val="{{ true }}"><rect x="0" y="0" width="1110" height="784" fill="url(#smgrid)"></rect></sc-if>
+
+          <g transform="{{ worldT }}">
+            <path d="M0 0H11800V7400H7200V9600H0Z" fill="none" stroke="#14171a" stroke-width="2.5" vector-effect="non-scaling-stroke"></path>
+            <path d="M4200 0V5200H11800M0 5200H4200M7200 7400V5200" fill="none" stroke="#14171a" stroke-opacity=".65" stroke-width="1.5" vector-effect="non-scaling-stroke"></path>
+            <path d="M0 900V2600M0 6200V7900" fill="none" stroke="#f3f4f3" stroke-width="6" vector-effect="non-scaling-stroke"></path>
+            <path d="M4200 1800V3300" fill="none" stroke="#f3f4f3" stroke-width="5" vector-effect="non-scaling-stroke"></path>
+            <circle cx="9500" cy="6300" r="300" fill="none" stroke="#14171a" stroke-opacity=".55" stroke-width="1.5" vector-effect="non-scaling-stroke"></circle>
+            <circle cx="2100" cy="7600" r="300" fill="none" stroke="#14171a" stroke-opacity=".55" stroke-width="1.5" vector-effect="non-scaling-stroke"></circle>
+            <path d="M600 600H3600V4600H600Z" fill="none" stroke="#157a38" stroke-opacity=".28" stroke-width="1" stroke-dasharray="6 5" vector-effect="non-scaling-stroke"></path>
+          </g>
+
+          <sc-if value="{{ fovOn }}" hint-placeholder-val="{{ true }}">
+            <g>
+              <path d="{{ fovD }}" fill="#157a38" fill-opacity=".1" stroke="#157a38" stroke-opacity=".55" stroke-width="1"></path>
+              <path d="{{ unitD }}" fill="#157a38" stroke="#14171a" stroke-width="1.2"></path>
+            </g>
+          </sc-if>
+
+          <sc-for list="{{ marks }}" as="n" hint-placeholder-count="12">
+            <g opacity="{{ n.op }}">
+              <sc-if value="{{ n.sel }}" hint-placeholder-val="{{ false }}">
+                <rect x="{{ n.selX }}" y="{{ n.selY }}" width="26" height="26" fill="none" stroke="#157a38" stroke-width="1.4" stroke-dasharray="4 3"></rect>
+              </sc-if>
+              <sc-if value="{{ n.chip }}" hint-placeholder-val="{{ false }}">
+                <rect x="{{ n.chipX }}" y="{{ n.chipY }}" width="34" height="18" fill="{{ n.fill }}" stroke="{{ n.stroke }}" stroke-width="1.4"></rect>
+              </sc-if>
+              <sc-if value="{{ n.dot }}" hint-placeholder-val="{{ true }}">
+                <circle cx="{{ n.sx }}" cy="{{ n.sy }}" r="{{ n.r }}" fill="{{ n.fill }}" stroke="{{ n.stroke }}" stroke-width="1.8"></circle>
+              </sc-if>
+              <sc-if value="{{ n.cross }}" hint-placeholder-val="{{ false }}">
+                <path d="{{ n.crossD }}" stroke="{{ n.stroke }}" stroke-width="1.4" fill="none"></path>
+              </sc-if>
+              <sc-if value="{{ n.failed }}" hint-placeholder-val="{{ false }}">
+                <path d="{{ n.slashD }}" stroke="#b0463c" stroke-width="2" fill="none"></path>
+              </sc-if>
+              <sc-if value="{{ n.shimmer }}" hint-placeholder-val="{{ false }}">
+                <circle cx="{{ n.sx }}" cy="{{ n.sy }}" r="7" fill="none" stroke="#157a38" stroke-width="2" style="animation:sm-shimmer 1.1s ease-in-out infinite"></circle>
+                <circle cx="{{ n.sx }}" cy="{{ n.sy }}" r="14" fill="none" stroke="#157a38" stroke-width="1" style="animation:sm-shimmer-ring 1.6s ease-out infinite"></circle>
+              </sc-if>
+              <sc-if value="{{ n.active }}" hint-placeholder-val="{{ false }}">
+                <circle cx="{{ n.sx }}" cy="{{ n.sy }}" r="12" fill="none" stroke="#157a38" stroke-width="2" style="animation:sm-pulse 1.4s infinite;transform-box:fill-box;transform-origin:center"></circle>
+              </sc-if>
+              <circle cx="{{ n.sx }}" cy="{{ n.sy }}" r="20" fill="transparent" onClick="{{ n.onClick }}" style="cursor:pointer"></circle>
+            </g>
+          </sc-for>
+        </svg>
+
+        <div style="position:absolute;inset:0;pointer-events:none">
+          <sc-if value="{{ labels }}" hint-placeholder-val="{{ true }}">
+            <sc-for list="{{ marks }}" as="n" hint-placeholder-count="12">
+              <span style="position:absolute;left:{{ n.tx }}px;top:{{ n.ty }}px;font:600 11.5px/1 var(--font-heading);letter-spacing:.06em;color:{{ n.labelFill }}">{{ n.id }}</span>
+            </sc-for>
+          </sc-if>
+        </div>
+
+        <div style="position:absolute;left:14px;top:14px;display:flex;gap:8px">
+          <button onClick="{{ toggleMulti }}" style="{{ tgMulti }}">Multi-select</button>
+          <button onClick="{{ toggleLabels }}" style="{{ tgLabels }}">Labels</button>
+          <button onClick="{{ toggleFov }}" style="{{ tgFov }}">Marker FOV</button>
+          <button onClick="{{ toggleGrid }}" style="{{ tgGrid }}">Grid 1 m</button>
+        </div>
+
+        <div style="position:absolute;left:14px;bottom:14px;display:flex;align-items:center;gap:10px;padding:6px 10px;background:color-mix(in srgb,var(--color-bg) 88%,transparent);border:1px solid var(--color-divider)">
+          <div style="width:{{ scaleBarPx }}px;height:6px;border:1px solid var(--color-text);border-top:none"></div>
+          <span style="font:400 11px var(--font-body);font-variant-numeric:tabular-nums">{{ scaleBarLabel }}</span>
+        </div>
+
+        <sc-if value="{{ hints }}" hint-placeholder-val="{{ true }}">
+        <span style="position:absolute;left:50%;top:62px;transform:translateX(-50%);font:400 10.5px var(--font-body);color:color-mix(in srgb,var(--color-text) 52%,transparent);pointer-events:none">drag — pan · pinch — zoom · tap node — select</span>
+        </sc-if>
+
+        <div style="position:absolute;right:14px;top:14px;display:flex;flex-direction:column;border:1px solid var(--color-divider);background:var(--color-bg)">
+          <button onClick="{{ zoomIn }}" style="width:44px;height:44px;display:grid;place-items:center;background:transparent;border:none;border-bottom:1px solid var(--color-divider);cursor:pointer;color:var(--color-text)" style-hover="background:color-mix(in srgb,var(--color-text) 7%,transparent)"><svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" fill="none"><path d="M12 5v14M5 12h14"></path></svg></button>
+          <button onClick="{{ zoomOut }}" style="width:44px;height:44px;display:grid;place-items:center;background:transparent;border:none;border-bottom:1px solid var(--color-divider);cursor:pointer;color:var(--color-text)" style-hover="background:color-mix(in srgb,var(--color-text) 7%,transparent)"><svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" fill="none"><path d="M5 12h14"></path></svg></button>
+          <button onClick="{{ fit }}" title="Fit plan" style="width:44px;height:44px;display:grid;place-items:center;background:transparent;border:none;cursor:pointer;color:var(--color-text)" style-hover="background:color-mix(in srgb,var(--color-text) 7%,transparent)"><svg width="18" height="18" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" fill="none"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"></path></svg></button>
+        </div>
+
+        <div style="position:absolute;right:16px;bottom:16px;display:flex;flex-direction:column;align-items:flex-end;gap:10px;width:296px">
+          <sc-if value="{{ oneSel }}" hint-placeholder-val="{{ false }}">
+            <div class="blueprint" style="width:100%;padding:12px 14px;background:color-mix(in srgb,var(--color-bg) 94%,transparent);display:flex;flex-direction:column;gap:7px;box-shadow:var(--shadow-lg)">
+              <i class="corner tl"></i><i class="corner br"></i>
+              <div style="display:flex;align-items:center;gap:9px">
+                <span style="font:600 19px var(--font-heading);line-height:1">{{ detId }}</span>
+                <span class="tag {{ detTagClass }}">{{ detState }}</span>
+                <span class="tag {{ detViewClass }}">{{ detView }}</span>
+                <div style="flex:1"></div>
+                <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px" onClick="{{ clearSel }}">Close</button>
+              </div>
+              <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:12.5px;font-variant-numeric:tabular-nums">
+                <span style="color:color-mix(in srgb,var(--color-text) 55%,transparent)">E</span><span>{{ detE }}</span>
+                <span style="color:color-mix(in srgb,var(--color-text) 55%,transparent)">N</span><span>{{ detN }}</span>
+              </div>
+              <span style="font:400 11.5px/1.45 var(--font-body);color:color-mix(in srgb,var(--color-text) 62%,transparent)">{{ detNote }}</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ manySel }}" hint-placeholder-val="{{ false }}">
+            <div class="blueprint" style="width:100%;padding:12px 14px;background:color-mix(in srgb,var(--color-bg) 94%,transparent);display:flex;align-items:center;gap:10px;box-shadow:var(--shadow-lg)">
+              <i class="corner tl"></i><i class="corner br"></i>
+              <span style="font:600 17px var(--font-heading)">{{ selCountText }}</span>
+              <div style="flex:1"></div>
+              <button class="btn btn-ghost" style="font-size:11px;padding:2px 6px" onClick="{{ clearSel }}">Clear</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ blocked }}" hint-placeholder-val="{{ false }}">
+            <span style="max-width:100%;padding:6px 10px;background:color-mix(in srgb,{{ blockTone }} 12%,var(--color-bg));border:1px solid {{ blockTone }};font:400 11.5px/1.4 var(--font-body);color:{{ blockTone }};text-align:right">{{ blockNote }}</span>
+          </sc-if>
+
+          <div style="display:flex;gap:10px">
+            <button class="btn btn-secondary" style="min-width:132px;height:52px;font-size:15px;background:color-mix(in srgb,var(--color-bg) 92%,transparent);box-shadow:var(--shadow-lg)" onClick="{{ doSurvey }}" disabled="{{ surveyOff }}">Survey</button>
+            <button class="btn btn-primary" style="{{ projectBtnStyle }}" onClick="{{ doProject }}" disabled="{{ projectOff }}">{{ projectLabel }}</button>
+          </div>
+        </div>
+
+        <sc-if value="{{ running }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--color-neutral-900) 42%,transparent)">
+          <div class="blueprint" style="width:330px;padding:26px 24px 22px;background:var(--color-bg);display:flex;flex-direction:column;align-items:center;gap:14px;box-shadow:var(--shadow-lg)">
+            <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+            <span style="font:600 12px var(--font-heading);letter-spacing:.16em;text-transform:uppercase;color:var(--color-accent-700)">{{ runTitle }}</span>
+            <div style="position:relative;width:132px;height:132px">
+              <svg width="132" height="132" viewBox="0 0 132 132" style="display:block">
+                <circle cx="66" cy="66" r="56" fill="none" stroke="#14171a" stroke-opacity=".12" stroke-width="6"></circle>
+                <circle cx="66" cy="66" r="56" fill="none" stroke="#157a38" stroke-width="6" stroke-dasharray="{{ ringDash }}" transform="rotate(-90 66 66)"></circle>
+              </svg>
+              <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+                <span style="font:600 34px/1 var(--font-heading);font-variant-numeric:tabular-nums">{{ runPct }}</span>
+                <span style="font:400 10px/1 var(--font-body);letter-spacing:.14em;color:#5f6360">{{ runCount }}</span>
+              </div>
+            </div>
+            <span style="font:400 12.5px var(--font-body);text-align:center;color:color-mix(in srgb,var(--color-text) 70%,transparent)">{{ runNote }}</span>
+            <button class="btn btn-secondary btn-block" onClick="{{ cancelRun }}">Cancel</button>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showImport }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-height:0;overflow:auto;padding:26px 30px;display:flex;justify-content:center">
+      <div style="width:100%;max-width:720px;display:flex;flex-direction:column;gap:18px">
+        <div>
+          <h4 style="margin:0 0 3px">Plans</h4>
+          <p style="font-size:13px;margin:0;color:color-mix(in srgb,var(--color-text) 60%,transparent)">Tap a plan to open it on the canvas.</p>
+        </div>
+
+        <div class="blueprint" style="padding:6px 16px 10px">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <sc-for list="{{ files }}" as="f" hint-placeholder-count="3">
+            <button onClick="{{ f.onOpen }}" style="width:100%;display:flex;align-items:center;gap:14px;padding:16px 4px;background:transparent;border:none;border-bottom:1px solid color-mix(in srgb,var(--color-text) 10%,transparent);cursor:pointer;text-align:left;color:var(--color-text)" style-hover="background:color-mix(in srgb,var(--color-text) 5%,transparent)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ f.iconColor }}" stroke-width="1.5"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"></path><path d="M14 3v5h5"></path></svg>
+              <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <span style="font:600 15.5px var(--font-heading)">{{ f.name }}</span>
+                <span style="font:400 11.5px var(--font-body);color:color-mix(in srgb,var(--color-text) 55%,transparent)">Uploaded {{ f.date }}</span>
+              </span>
+              <span class="tag {{ f.tagClass }}">{{ f.state }}</span>
+            </button>
+          </sc-for>
+        </div>
+
+        <div class="blueprint" style="padding:18px;display:flex;align-items:center;gap:16px">
+          <i class="corner tl"></i><i class="corner br"></i>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
+            <span style="font:600 15px var(--font-heading)">Add a plan</span>
+            <span style="font:400 12px var(--font-body);color:color-mix(in srgb,var(--color-text) 58%,transparent)">Pick a .dxf file from this tablet.</span>
+          </span>
+          <button class="btn btn-primary" style="height:48px;min-width:170px" onClick="{{ pickFile }}">Choose .dxf file…</button>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showSetup }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px;padding:24px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+        <span style="display:flex;align-items:center;gap:10px">
+          <sc-if value="{{ computing }}" hint-placeholder-val="{{ false }}">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#157a38" stroke-width="2.2" style="animation:sm-spin 1s linear infinite"><path d="M12 3a9 9 0 1 0 9 9"></path></svg>
+          </sc-if>
+          <span style="font:600 40px/1.05 var(--font-heading);letter-spacing:-.01em;color:{{ poseTitleColor }};text-align:center">{{ poseTitle }}</span>
+        </span>
+        <span style="font:400 14px var(--font-body);color:color-mix(in srgb,var(--color-text) 62%,transparent);text-align:center;max-width:44ch">{{ poseSub }}</span>
+      </div>
+
+      <sc-if value="{{ originUnknown }}" hint-placeholder-val="{{ false }}">
+        <button class="btn btn-primary" style="height:96px;min-width:420px;padding:0 42px;font:600 20px var(--font-heading);letter-spacing:.02em" onClick="{{ setOrigin }}">Set Current Pose as Origin</button>
+      </sc-if>
+
+      <sc-if value="{{ originKnown }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:34px">
+      <div style="display:flex;align-items:center;gap:26px;flex-wrap:wrap;justify-content:center">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span style="font:600 10.5px var(--font-heading);letter-spacing:.12em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Tag</span>
+          <select class="input" style="height:42px;min-width:132px;font:600 13.5px var(--font-heading)" value="{{ curTag }}" onChange="{{ setTag }}">
+            <sc-for list="{{ tagOpts }}" as="t" hint-placeholder-count="2">
+              <option value="{{ t.v }}">{{ t.label }}</option>
+            </sc-for>
+          </select>
+          <button class="btn btn-secondary" style="height:42px;padding:0 16px;font-size:13px;white-space:nowrap;flex:none;min-width:112px" onClick="{{ addTag }}">+ New tag</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:9px">
+          <span style="font:600 10.5px var(--font-heading);letter-spacing:.12em;text-transform:uppercase;color:color-mix(in srgb,var(--color-text) 55%,transparent)">Movement</span>
+          <div style="display:flex">
+            <button onClick="{{ setFine }}" style="{{ fineBtn }}">Fine</button>
+            <button onClick="{{ setCoarse }}" style="{{ coarseBtn }}">Coarse</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,96px);grid-template-rows:repeat(3,96px);gap:10px">
+        <div></div>
+        <button onClick="{{ nudgeUp }}" style="{{ padBtn }}" style-active="background:var(--color-accent-200)"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 19V5M6 11l6-6 6 6"></path></svg></button>
+        <div></div>
+        <button onClick="{{ nudgeLeft }}" style="{{ padBtn }}" style-active="background:var(--color-accent-200)"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></button>
+        <button onClick="{{ autoLock }}" style="{{ lockBtn }}" disabled="{{ lockOff }}">
+          <sc-if value="{{ locking }}" hint-placeholder-val="{{ false }}">
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="animation:sm-spin 1s linear infinite"><path d="M12 3a9 9 0 1 0 9 9"></path></svg>
+          </sc-if>
+          <sc-if value="{{ notLocking }}" hint-placeholder-val="{{ true }}">
+            <span style="font:600 14px/1.15 var(--font-heading);letter-spacing:.1em;text-align:center">{{ lockLabel }}</span>
+          </sc-if>
+        </button>
+        <button onClick="{{ nudgeRight }}" style="{{ padBtn }}" style-active="background:var(--color-accent-200)"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></button>
+        <div></div>
+        <button onClick="{{ nudgeDown }}" style="{{ padBtn }}" style-active="background:var(--color-accent-200)"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M6 13l6 6 6-6"></path></svg></button>
+        <div></div>
+      </div>
+      </div>
+      </sc-if>
+
+      <sc-if value="{{ posed }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:12px">
+          <button class="btn btn-secondary" style="height:52px;min-width:150px;font-size:15px" onClick="{{ resetPose }}">Reposition</button>
+          <button class="btn btn-ghost" style="height:52px;min-width:130px;font-size:14px" onClick="{{ clearPose }}">Clear origin</button>
+          <button class="btn btn-primary" style="height:52px;min-width:210px;font-size:15px" onClick="{{ goPlan }}">Continue to plan</button>
+        </div>
+      </sc-if>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ showSettings }}" hint-placeholder-val="{{ false }}">
+    <div style="flex:1;min-height:0;overflow:auto;padding:22px 26px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;align-content:start">
+      <div class="blueprint" style="padding:18px;display:flex;flex-direction:column;gap:14px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <h5 style="margin:0">Units &amp; plan</h5>
+        <div class="field"><label>Coordinate units</label>
+          <div class="seg">
+            <label class="seg-opt"><input type="radio" name="u" checked="{{ uMM }}" onChange="{{ setMM }}">mm</label>
+            <label class="seg-opt"><input type="radio" name="u" checked="{{ uM }}" onChange="{{ setM }}">m</label>
+            <label class="seg-opt"><input type="radio" name="u" checked="{{ uFt }}" onChange="{{ setFt }}">ft</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="blueprint" style="padding:18px;display:flex;flex-direction:column;gap:14px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <h5 style="margin:0">Laser</h5>
+        <div class="field"><label>Beam brightness — {{ beam }}%</label>
+          <input type="range" min="10" max="100" step="5" value="{{ beam }}" onChange="{{ setBeam }}" style="width:100%;accent-color:var(--color-accent)">
+        </div>
+      </div>
+
+      <div class="blueprint" style="padding:18px;display:flex;flex-direction:column;gap:14px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <h5 style="margin:0">Connection</h5>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:9px;height:9px;background:{{ linkDot }}"></span>
+          <span style="font:400 13.5px var(--font-body)">{{ connTitle }}</span>
+        </div>
+        <label style="display:flex;align-items:center;justify-content:space-between;font-size:13.5px">Reconnect automatically<button onClick="{{ toggleAuto }}" style="{{ autoBtn }}">{{ autoText }}</button></label>
+        <button class="btn btn-secondary btn-block" onClick="{{ reconnect }}">{{ connAction }}</button>
+      </div>
+
+      <div class="blueprint" style="padding:18px;display:flex;flex-direction:column;gap:12px">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <h5 style="margin:0">About</h5>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 12px;font-size:13px">
+          <span style="color:color-mix(in srgb,var(--color-text) 55%,transparent)">App</span><span>Smart Marker 0.9.2 (build 214)</span>
+          <span style="color:color-mix(in srgb,var(--color-text) 55%,transparent)">Firmware</span><span>Marker FW 2.4.1 · dongle 1.0.7</span>
+          <span style="color:color-mix(in srgb,var(--color-text) 55%,transparent)">Tablet</span><span>OnePlus Pad Go · OxygenOS 14</span>
+          <span style="color:color-mix(in srgb,var(--color-text) 55%,transparent)">Signed in</span><span>{{ userEmail }}</span>
+        </div>
+        <button class="btn btn-secondary btn-block" onClick="{{ noop }}">Check for firmware update</button>
+      </div>
+    </div>
+    </sc-if>
+
+    <sc-if value="{{ connOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;inset:0;display:grid;place-items:center;background:color-mix(in srgb,var(--color-neutral-900) 45%,transparent)" onClick="{{ closeConn }}">
+      <div class="blueprint" style="width:400px;padding:22px;background:var(--color-bg);display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-lg)">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="width:10px;height:10px;background:{{ linkDot }}"></span>
+          <span style="font:600 20px var(--font-heading)">{{ connTitle }}</span>
+        </div>
+        <span style="font:400 13px/1.55 var(--font-body);color:color-mix(in srgb,var(--color-text) 68%,transparent)">{{ connBody }}</span>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-secondary" onClick="{{ closeConn }}">Close</button>
+          <button class="btn btn-primary" onClick="{{ reconnect }}">{{ connAction }}</button>
+        </div>
+      </div>
+    </div>
+    </sc-if>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1240,&quot;height&quot;:900},&quot;nodeStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dot&quot;,&quot;crosshair&quot;,&quot;chip&quot;],&quot;default&quot;:&quot;dot&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Node language&quot;},&quot;showGestureHints&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Layout&quot;}}">
+class Component extends DCLogic {
+  constructor(p) {
+    super(p);
+    const N = (id, x, y, st) => ({ id, x, y, st });
+    this.CW = 1110; this.CH = 784;
+    const nodes = [
+      N('V01', 0, 0, 'projected'), N('V02', 11800, 0, 'surveyed'),
+      N('V03', 11800, 7400, 'surveyed'), N('V04', 7200, 7400, 'open'),
+      N('V05', 7200, 9600, 'open'), N('V06', 0, 9600, 'open'),
+      N('V07', 4200, 0, 'failed'), N('V08', 4200, 5200, 'open'),
+      N('V09', 11800, 5200, 'open'), N('V10', 0, 5200, 'projected'),
+      N('V11', 9500, 6300, 'open'), N('V12', 2100, 7600, 'open')
+    ];
+    const s = this.fitScale();
+    this.state = {
+      screen: 'plan', nodes, sel: [], scale: s,
+      pan: { x: (this.CW - 11800 * s) / 2, y: (this.CH - 9600 * s) / 2 },
+      multi: false, labels: true, grid: true, lock: false, fovOn: true,
+      posed: true, computing: false, tags: [{ n: 1, locked: true }, { n: 2, locked: true }],
+      hadPose: true, curTag: 1, step: 'coarse',
+      run: null, projecting: null, az: 12.4, el: -3.15, locking: false,
+      link: true, connOpen: false, userOpen: false,
+      files: [
+        { name: 'plot-14-ground-rev-C.dxf', date: '8 Sep 2026', open: true },
+        { name: 'plot-14-ground-rev-B.dxf', date: '2 Sep 2026', open: false },
+        { name: 'site-setout-master.dxf', date: '28 Aug 2026', open: false }
+      ],
+      units: 'mm', snap: 25, beam: 70, dwell: 4, advance: true, ping: true, autoRe: true, laser: false
+    };
+    try {
+      const s = localStorage.getItem('sm-move-step');
+      if (s === 'fine' || s === 'coarse') this.state.step = s;
+      const t = parseInt(localStorage.getItem('sm-cur-tag'), 10);
+      if (t > 0) this.state.curTag = t;
+    } catch (e) {}
+    this.pointers = new Map();
+  }
+
+  fitScale() { return Math.min((this.CW - 200) / 11800, (this.CH - 200) / 9600); }
+  componentWillUnmount() { clearInterval(this.runT); clearTimeout(this.poseT); clearTimeout(this.lockT); }
+
+  dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+  mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+  local(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * this.CW / r.width, y: (e.clientY - r.top) * this.CH / r.height };
+  }
+  onDown = (e) => {
+    if (this.state.lock) return;
+    this.pointers.set(e.pointerId, this.local(e));
+    this.moved = false;
+    if (this.pointers.size === 2) {
+      const [a, b] = [...this.pointers.values()];
+      this.pinch = { d: this.dist(a, b), m: this.mid(a, b), scale: this.state.scale, pan: { ...this.state.pan } };
+    }
+  };
+  onMove = (e) => {
+    if (!this.pointers.has(e.pointerId) || this.state.lock) return;
+    const prev = this.pointers.get(e.pointerId), cur = this.local(e);
+    this.pointers.set(e.pointerId, cur);
+    if (this.pointers.size === 1) {
+      const dx = cur.x - prev.x, dy = cur.y - prev.y;
+      if (Math.abs(dx) + Math.abs(dy) > 2) this.moved = true;
+      this.setState({ pan: { x: this.state.pan.x + dx, y: this.state.pan.y + dy } });
+    } else if (this.pointers.size === 2 && this.pinch) {
+      const [a, b] = [...this.pointers.values()];
+      const k = Math.max(0.2, Math.min(6, this.pinch.scale * (this.dist(a, b) / this.pinch.d)));
+      const m = this.pinch.m;
+      const wx = (m.x - this.pinch.pan.x) / this.pinch.scale, wy = (m.y - this.pinch.pan.y) / this.pinch.scale;
+      this.moved = true;
+      this.setState({ scale: k, pan: { x: m.x - wx * k, y: m.y - wy * k } });
+    }
+  };
+  onUp = (e) => { this.pointers.delete(e.pointerId); if (this.pointers.size < 2) this.pinch = null; };
+  onWheel = (e) => {
+    if (this.state.lock) return;
+    e.preventDefault();
+    const p = this.local(e);
+    const k = Math.max(0.2, Math.min(6, this.state.scale * (e.deltaY > 0 ? 0.9 : 1.11)));
+    const wx = (p.x - this.state.pan.x) / this.state.scale, wy = (p.y - this.state.pan.y) / this.state.scale;
+    this.setState({ scale: k, pan: { x: p.x - wx * k, y: p.y - wy * k } });
+  };
+  zoomBy(f) {
+    const k = Math.max(0.2, Math.min(6, this.state.scale * f));
+    const cx = this.CW / 2, cy = this.CH / 2;
+    const wx = (cx - this.state.pan.x) / this.state.scale, wy = (cy - this.state.pan.y) / this.state.scale;
+    this.setState({ scale: k, pan: { x: cx - wx * k, y: cy - wy * k } });
+  }
+  fitPlan() {
+    const s = this.fitScale();
+    this.setState({ scale: s, pan: { x: (this.CW - 11800 * s) / 2, y: (this.CH - 9600 * s) / 2 } });
+  }
+
+  tapNode(id) {
+    if (this.moved) return;
+    const { sel, multi } = this.state;
+    if (multi) this.setState({ sel: sel.includes(id) ? sel.filter(x => x !== id) : sel.concat([id]) });
+    else this.setState({ sel: sel.length === 1 && sel[0] === id ? [] : [id] });
+  }
+  /* projection is continuous: the beam keeps marking until the user halts it */
+  toggleProject() {
+    if (this.state.projecting) return this.setState({ projecting: null });
+    const ids = this.state.sel.slice();
+    if (!ids.length) return;
+    this.setState({
+      projecting: ids,
+      nodes: this.state.nodes.map(n => ids.includes(n.id) ? { ...n, st: 'projected' } : n)
+    });
+  }
+  start(type) {
+    const ids = this.state.sel.slice();
+    if (!ids.length) return;
+    this.setState({ run: { type, ids, pct: 0, i: 0 } });
+    clearInterval(this.runT);
+    this.runT = setInterval(() => {
+      const r = this.state.run;
+      if (!r) return clearInterval(this.runT);
+      const pct = r.pct + 4;
+      if (pct >= 100) {
+        clearInterval(this.runT);
+        const nodes = this.state.nodes.map(n => r.ids.includes(n.id)
+          ? { ...n, st: type === 'survey' ? (n.id === 'V07' ? 'failed' : 'surveyed') : 'projected' } : n);
+        this.setState({ nodes, run: null });
+      } else {
+        this.setState({ run: { ...r, pct, i: Math.min(r.ids.length - 1, Math.floor(pct / 100 * r.ids.length)) } });
+      }
+    }, 70);
+  }
+  setStep(step) {
+    try { localStorage.setItem('sm-move-step', step); } catch (e) {}
+    this.setState({ step });
+  }
+  pickTag(n) {
+    try { localStorage.setItem('sm-cur-tag', String(n)); } catch (e) {}
+    this.setState({ curTag: n });
+  }
+  addTag() {
+    const n = this.state.tags.reduce((m, t) => Math.max(m, t.n), 0) + 1;
+    try { localStorage.setItem('sm-cur-tag', String(n)); } catch (e) {}
+    this.setState({ tags: this.state.tags.concat([{ n, locked: false }]), curTag: n, posed: false, computing: false });
+  }
+  doAutoLock() {
+    const st = this.state;
+    if (st.locking || st.computing) return;
+    const i = st.tags.findIndex(t => t.n === st.curTag);
+    if (i < 0 || st.tags[i].locked) return;
+    this.setState({ locking: true });
+    this.lockT = setTimeout(() => {
+      const tags = st.tags.map((t, j) => j === i ? { ...t, locked: true } : t);
+      const all = tags.filter(t => t.locked).length >= 2;
+      this.setState({ locking: false, tags, computing: all });
+      if (all) this.poseT = setTimeout(() => this.setState({ computing: false, posed: true, hadPose: true }), 1800);
+    }, 1400);
+  }
+
+  renderVals() {
+    const st = this.state, S = st.scale, P = st.pan;
+    const acc = '#157a38', ink = '#14171a', bg = '#f3f4f3', bad = '#b0463c';
+    const style = this.props.nodeStyle ?? 'crosshair';
+    const sx = x => P.x + x * S, sy = y => P.y + y * S;
+    const states = {
+      open: { fill: bg, stroke: ink, tag: 'tag-neutral', label: 'Unsurveyed' },
+      surveyed: { fill: '#7cb692', stroke: '#10652f', tag: 'tag-accent', label: 'Surveyed' },
+      projected: { fill: acc, stroke: '#08351b', tag: 'tag-accent', label: 'Marked' },
+      failed: { fill: bg, stroke: bad, tag: 'tag-outline', label: 'Failed' }
+    };
+    const sel = st.sel, one = sel.length === 1, run = st.run;
+    const activeId = run ? run.ids[run.i] : null;
+
+    /* marker stands in the notch outside the footprint; the pose pad steers its heading */
+    const U = { x: 8300, y: 8900 }, RANGE = 13000, HALF = 35 * Math.PI / 180;
+    const head = (-124 + (st.az - 12.4)) * Math.PI / 180;
+    const inView = n => {
+      if (!st.posed) return false;
+      if (Math.hypot(n.x - U.x, n.y - U.y) > RANGE) return false;
+      let d = Math.atan2(n.y - U.y, n.x - U.x) - head;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      return Math.abs(d) <= HALF;
+    };
+    const ux = sx(U.x), uy = sy(U.y), fr = RANGE * S;
+    const pt = (a, r) => (ux + r * Math.cos(a)).toFixed(1) + ' ' + (uy + r * Math.sin(a)).toFixed(1);
+
+    const marks = st.nodes.map(n => {
+      const c = states[n.st], X = sx(n.x), Y = sy(n.y), isSel = sel.includes(n.id);
+      const vis = inView(n);
+      return {
+        id: n.id, sx: X, sy: Y, op: vis ? 1 : 0.38, r: style === 'dot' ? (isSel ? 9 : 7) : 6.5,
+        fill: c.fill, stroke: c.stroke, sel: isSel, selX: X - 13, selY: Y - 13,
+        dot: style !== 'chip', chip: style === 'chip', chipX: X - 17, chipY: Y - 9,
+        cross: style === 'crosshair',
+        crossD: 'M' + (X - 13) + ' ' + Y + 'h7M' + (X + 6) + ' ' + Y + 'h7M' + X + ' ' + (Y - 13) + 'v7M' + X + ' ' + (Y + 6) + 'v7',
+        failed: n.st === 'failed', slashD: 'M' + (X - 6) + ' ' + (Y - 6) + 'l12 12',
+        active: n.id === activeId,
+        shimmer: !!st.projecting && st.projecting.includes(n.id),
+        tx: X + 12, ty: Y - 16,
+        labelFill: isSel ? '#10652f' : '#5f6360', onClick: () => this.tapNode(n.id)
+      };
+    });
+
+    const gp = Math.max(14, 1000 * S);
+    const det = one ? st.nodes.find(n => n.id === sel[0]) : null;
+    const dc = det ? states[det.st] : null;
+    const selNodes = st.nodes.filter(n => sel.includes(n.id));
+    const anyUnsurveyed = selNodes.some(n => n.st === 'open' || n.st === 'failed');
+    const hidden = selNodes.filter(n => !inView(n));
+    let blockNote = '';
+    if (st.projecting) blockNote = 'Beam live on ' + st.projecting.length + (st.projecting.length === 1 ? ' point' : ' points') + ' — mark the floor, then halt.';
+    else if (!st.posed) blockNote = 'Device moved — find Tags again before surveying or projecting.';
+    else if (hidden.length) blockNote = 'Out of the marker\u2019s view: ' + hidden.map(n => n.id).join(', ') + ' — turn the marker to bring them in.';
+    else if (sel.length && anyUnsurveyed) blockNote = 'Survey before projecting: ' + selNodes.filter(n => n.st === 'open' || n.st === 'failed').map(n => n.id).join(', ');
+
+    const tabOn = 'display:flex;flex-direction:column;align-items:center;gap:4px;width:58px;padding:9px 0;cursor:pointer;border:1px solid ' + acc + ';background:' + acc + ';color:' + bg;
+    const tabOff = 'display:flex;flex-direction:column;align-items:center;gap:4px;width:58px;padding:9px 0;cursor:pointer;border:1px solid transparent;background:transparent;color:' + ink;
+    const tab = k => st.screen === k ? tabOn : tabOff;
+    const tgBase = 'padding:10px 12px;font:600 11.5px var(--font-heading);letter-spacing:.06em;cursor:pointer;';
+    const tgOn = tgBase + 'border:1px solid ' + acc + ';background:' + acc + ';color:' + bg;
+    const tgOff = tgBase + 'border:1px solid var(--color-divider);background:color-mix(in srgb,' + bg + ' 88%,transparent);color:' + ink;
+    const pill = on => 'padding:4px 12px;font:600 11px var(--font-heading);letter-spacing:.1em;cursor:pointer;' + (on
+      ? 'border:1px solid ' + acc + ';background:' + acc + ';color:' + bg
+      : 'border:1px solid var(--color-divider);background:transparent;color:' + ink);
+
+    const found = st.tags.filter(t => t.locked).length;
+    const laserOn = st.laser || !!st.projecting;
+    const curLocked = !!(st.tags.find(t => t.n === st.curTag) || {}).locked;
+    const stepDeg = st.step === 'fine' ? 0.05 : 0.5;
+    const segBtn = on => 'height:42px;padding:0 15px;font:600 12px var(--font-heading);letter-spacing:.05em;cursor:pointer;border:1px solid '
+      + (on ? acc : 'var(--color-divider)') + ';background:' + (on ? acc : 'transparent') + ';color:' + (on ? bg : ink)
+      + ';margin-left:-1px',
+    poseTitle = !st.hadPose ? 'Origin Not Set' : (st.computing ? 'Computing pose…' : (st.posed && found >= 2 ? 'Site Pose Identified' : 'Find a Tag'));
+    const titles = { plan: 'Plan view', import: 'Plans', setup: 'Positioning', settings: 'Settings' };
+
+    return {
+      jobName: 'Riverside Plot 14', screenTitle: titles[st.screen],
+      showPlan: st.screen === 'plan', showImport: st.screen === 'import',
+      showSetup: st.screen === 'setup', showSettings: st.screen === 'settings',
+      goPlan: () => this.setState({ screen: 'plan', connOpen: false, userOpen: false }),
+      goImport: () => this.setState({ screen: 'import', connOpen: false, userOpen: false }),
+      goSetup: () => this.setState({ screen: 'setup', connOpen: false, userOpen: false }),
+      goSettings: () => this.setState({ screen: 'settings', connOpen: false, userOpen: false }),
+      tabPlan: tab('plan'), tabImport: tab('import'), tabSetup: tab('setup'), tabSettings: tab('settings'),
+
+      userName: 'D. Whitfield', userInitials: 'DW', userRole: 'Site lead',
+      userEmail: 'dw@harrowbuild.co.uk',
+      userOpen: st.userOpen, toggleUser: () => this.setState({ userOpen: !st.userOpen }),
+
+      poseOk: st.posed, poseWarn: !st.posed && !st.computing,
+      poseChipText: st.posed ? 'Pose Known' : (st.computing ? 'Computing pose…' : (st.hadPose ? 'Device Moved: Reposition' : 'Pose Not Known: Set Origin')),
+      poseChipStyle: 'display:flex;align-items:center;gap:7px;height:36px;padding:0 12px;cursor:pointer;font:600 12px var(--font-heading);letter-spacing:.04em;text-transform:uppercase;border:1px solid '
+        + (st.posed ? acc : (st.computing ? 'var(--color-divider)' : bad))
+        + ';background:' + (st.posed ? 'color-mix(in srgb,' + acc + ' 12%,transparent)' : (st.computing ? 'transparent' : 'color-mix(in srgb,' + bad + ' 14%,transparent)'))
+        + ';color:' + (st.posed ? '#10652f' : (st.computing ? ink : '#8e392f')),
+      linkDot: st.link ? acc : bad, linkText: st.link ? 'Connected' : 'No link',
+      laserChipText: laserOn ? 'Laser On' : 'Laser Off',
+      laserChipStyle: 'display:flex;align-items:center;gap:7px;height:36px;padding:0 12px;font:600 12px var(--font-heading);letter-spacing:.04em;text-transform:uppercase;border:1px solid '
+        + (laserOn ? bad : 'var(--color-divider)') + ';background:' + (laserOn ? 'color-mix(in srgb,' + bad + ' 14%,transparent)' : 'transparent')
+        + ';color:' + (laserOn ? '#8e392f' : 'color-mix(in srgb,' + ink + ' 55%,transparent)'),
+      laserBtn: pill(laserOn), laserText: laserOn ? 'ON' : 'OFF',
+      toggleLaser: () => this.setState({ laser: !laserOn, projecting: null }),
+      toggleConn: () => this.setState({ connOpen: !st.connOpen, userOpen: false }),
+      closeConn: () => this.setState({ connOpen: false }),
+      connOpen: st.connOpen, connTitle: st.link ? 'Marker connected' : 'Marker disconnected',
+      connBody: st.link ? 'The tablet is talking to the Smart Marker over the dongle in the USB-C port.' : 'Plug the dongle into the USB-C port, or press reconnect.',
+      connAction: st.link ? 'Disconnect' : 'Reconnect',
+      reconnect: () => this.setState({ link: !st.link }),
+
+      marks, labels: st.labels, grid: st.grid, posed: st.posed,
+      worldT: 'translate(' + P.x + ' ' + P.y + ') scale(' + S + ')',
+      gridPx: gp, gridX: P.x % gp, gridY: P.y % gp,
+      canvasCursor: st.lock ? 'default' : 'grab',
+      scaleBarPx: Math.round(1000 * S), scaleBarLabel: '1 m · 1:' + Math.round(1 / S * 3.2),
+      hints: this.props.showGestureHints ?? true,
+      zoomIn: () => this.zoomBy(1.25), zoomOut: () => this.zoomBy(0.8), fit: () => this.fitPlan(),
+
+      running: !!run, runTitle: run ? (run.type === 'survey' ? 'Surveying' : 'Projecting') : '',
+      runPct: run ? run.pct + '%' : '', ringDash: run ? (run.pct / 100 * 351.8).toFixed(1) + ' 351.8' : '0 351.8',
+      runCount: run ? (run.i + 1) + ' / ' + run.ids.length : '',
+      runNote: run ? 'Hold still — reading return from ' + run.ids[run.i] : '',
+      cancelRun: () => { clearInterval(this.runT); this.setState({ run: null }); },
+
+      oneSel: one, manySel: sel.length > 1,
+      detId: det ? det.id : '', detState: dc ? dc.label : '', detTagClass: dc ? dc.tag : 'tag-neutral',
+      detView: det ? (inView(det) ? 'In view' : 'Out of view') : '',
+      detViewClass: det && inView(det) ? 'tag-outline' : 'tag-neutral',
+      detE: det ? det.x.toLocaleString() + ' mm' : '', detN: det ? det.y.toLocaleString() + ' mm' : '',
+      detNote: det ? ({
+        open: 'Not surveyed yet — projection stays locked until a return is captured.',
+        surveyed: 'Return captured. Ready to project.',
+        projected: 'Marked on the floor. Re-project to refresh the spot.',
+        failed: 'No return here. Clear the line of sight and survey again.'
+      })[det.st] : '',
+      selCountText: sel.length + ' vertices selected',
+      clearSel: () => this.setState({ sel: [] }),
+      blocked: !!blockNote, blockNote, blockTone: st.projecting ? acc : bad,
+      surveyOff: !sel.length || !st.posed || !!hidden.length || !!run || !!st.projecting,
+      projectOff: !st.projecting && (!sel.length || !st.posed || !!hidden.length || anyUnsurveyed || !!run),
+      projectLabel: st.projecting ? 'Halt Projection' : 'Project',
+      projectBtnStyle: 'min-width:132px;height:52px;font-size:15px;box-shadow:var(--shadow-lg)'
+        + (st.projecting ? ';background:' + bad + ';border-color:' + bad : ''),
+      fovOn: st.fovOn, tgFov: st.fovOn ? tgOn : tgOff,
+      toggleFov: () => this.setState({ fovOn: !st.fovOn }),
+      fovD: 'M' + ux + ' ' + uy + 'L' + pt(head - HALF, fr) + 'A' + fr.toFixed(1) + ' ' + fr.toFixed(1) + ' 0 0 1 ' + pt(head + HALF, fr) + 'Z',
+      unitD: 'M' + pt(head, 14) + 'L' + pt(head + 2.5, 10) + 'L' + pt(head - 2.5, 10) + 'Z',
+      doSurvey: () => this.start('survey'), doProject: () => this.toggleProject(),
+      tgMulti: st.multi ? tgOn : tgOff, tgLabels: st.labels ? tgOn : tgOff,
+      tgGrid: st.grid ? tgOn : tgOff,
+      toggleMulti: () => this.setState({ multi: !st.multi }),
+      toggleLabels: () => this.setState({ labels: !st.labels }),
+      toggleGrid: () => this.setState({ grid: !st.grid }),
+
+      files: st.files.map((f, i) => ({
+        name: f.name, date: f.date, state: f.open ? 'Open' : 'Uploaded',
+        tagClass: f.open ? 'tag-accent' : 'tag-neutral', iconColor: f.open ? acc : ink,
+        onOpen: () => this.setState({
+          files: st.files.map((x, j) => ({ ...x, open: j === i })), screen: 'plan', sel: []
+        })
+      })),
+      pickFile: () => {},
+
+      computing: st.computing, poseTitle,
+      originUnknown: !st.hadPose, originKnown: !!st.hadPose,
+      setOrigin: () => this.setState({ hadPose: true }),
+      poseTitleColor: st.posed && found >= 2 && !st.computing ? '#10652f' : ink,
+      curTag: st.curTag,
+      tagOpts: st.tags.map(t => ({ v: t.n, label: 'Tag ' + t.n + (t.locked ? ' · aligned' : ' · not found') })),
+      setTag: e => this.pickTag(+e.target.value),
+      addTag: () => this.addTag(),
+      fineBtn: segBtn(st.step === 'fine'), coarseBtn: segBtn(st.step === 'coarse'),
+      setFine: () => this.setStep('fine'), setCoarse: () => this.setStep('coarse'),
+      resetPose: () => this.setState({ posed: false, computing: false, tags: st.tags.map(t => ({ ...t, locked: false })), sel: [] }),
+      clearPose: () => this.setState({ posed: false, computing: false, hadPose: false, tags: st.tags.map(t => ({ ...t, locked: false })), sel: [] }),
+      poseSub: !st.hadPose ? 'No origin on file. Stand the marker where the site origin should be, level it, then set the pose.'
+        : st.computing ? 'Solving origin and rotation from both tags.'
+        : (st.posed && found >= 2 ? 'The marker knows where it stands. Vertices can be surveyed and projected.'
+          : (st.locking ? 'Searching for Tag ' + st.curTag + '…'
+            : 'Pick a tag, point the laser dot at it with the pad, then align. Two tags are needed. ' + found + ' of 2 found.')),
+      padBtn: 'display:grid;place-items:center;background:color-mix(in srgb,' + bg + ' 90%,transparent);border:1px solid var(--color-divider);cursor:pointer;color:' + ink,
+      lockBtn: curLocked && !st.computing
+        ? 'display:grid;place-items:center;cursor:default;border:1px solid ' + acc + ';background:transparent;color:#10652f'
+        : 'display:grid;place-items:center;cursor:pointer;border:1px solid ' + acc + ';background:' + (st.locking || st.computing ? '#10652f' : acc) + ';color:' + bg,
+      lockOff: (curLocked && !st.computing) || st.locking || st.computing,
+      locking: st.locking, notLocking: !st.locking,
+      lockLabel: 'TAG ' + st.curTag + ' ALIGNED',
+      autoLock: () => this.doAutoLock(),
+      nudgeUp: () => this.setState({ el: Math.round((st.el + stepDeg) * 100) / 100 }),
+      nudgeDown: () => this.setState({ el: Math.round((st.el - stepDeg) * 100) / 100 }),
+      nudgeLeft: () => this.setState({ az: Math.round((st.az - stepDeg) * 100) / 100 }),
+      nudgeRight: () => this.setState({ az: Math.round((st.az + stepDeg) * 100) / 100 }),
+
+      uMM: st.units === 'mm', uM: st.units === 'm', uFt: st.units === 'ft',
+      setMM: () => this.setState({ units: 'mm' }), setM: () => this.setState({ units: 'm' }), setFt: () => this.setState({ units: 'ft' }),
+      snap: st.snap, snapText: st.snap + ' mm', setSnap: e => this.setState({ snap: +e.target.value }),
+      origin: 'E 412 880.120  N 5 810 220.400',
+      beam: st.beam, setBeam: e => this.setState({ beam: +e.target.value }),
+      autoBtn: pill(st.autoRe), autoText: st.autoRe ? 'ON' : 'OFF', toggleAuto: () => this.setState({ autoRe: !st.autoRe }),
+      noop: () => {}
+    };
+  }
+}
+</script>
+</body>
+</html>

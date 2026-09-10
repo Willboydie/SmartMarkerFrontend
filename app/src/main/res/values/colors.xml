@@ -1,0 +1,8 @@
+<resources>
+    <color name="sm_bg">#FFF3F4F3</color>
+    <color name="sm_ink">#FF14171A</color>
+    <color name="sm_accent">#FF157A38</color>
+    <color name="sm_bad">#FFB0463C</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="black">#FF000000</color>
+</resources>

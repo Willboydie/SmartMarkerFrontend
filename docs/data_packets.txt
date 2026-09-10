@@ -1,0 +1,48 @@
+DEVICE -> FRONTEND
+ON SUCCESSFUL CONNECTION
+- firmwareVersion
+
+REGULAR TELEMETRY
+- healthOK
+- effectiveYaw (from known pose + currentRotation)
+- moved (IMU Latch -- uses lastKnownPose + currentRotation to identify base swivel from other movement using IMU data)
+- lastKnownPose(Pose pose)
+- connectionStatus(ConnectionStatus status)
+- originIsSet
+
+- isSurveying
+- surveyReady
+
+- isProjecting
+- projectionMode
+- laserOn
+- laserPower
+
+
+UPON SURVEY COMPLETION
+- surveyedNodes
+- surveyedNodePositions
+- nodesOutwithFOV
+
+
+UPON PROJECTION START
+- projectedNodes(Node projectedNodes[i])
+
+
+TABLET -> DEVICE
+CMDS
+- setLaserPower(int duty)
+- setProjectionMode(int mode)
+- beginTagSearch
+- beginSurvey(int nodeIDs[i])
+- beginProjection(int nodeIDs[i])
+- tagFound(int tagID)
+- nudgeBeamX(float dx)
+- nudgeBeamY(float dy)
+- setOrigin(Pose origin)
+
+ON CONNECTION / NEW PLAN SELECTION
+- registerNodes(Node planNodes[N])
+
+
+

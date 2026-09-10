@@ -1,0 +1,16 @@
+My tablet app has the following tasks:
+ 
+- Provide an interface to the user, with a pinch and drag display with clickable nodes, 
+other stateful buttons and a couple of alternative pages like a settings page.
+ 
+- Extract coordinate information from .dxf drawing files.
+ 
+- Send and receive data through the USB-C port to/from an ESP32 NOW WiFi dongle. Data rates peaking at 10KB/s.
+ 
+- Be downloadeable as an android app.
+ 
+- The tablet is a OnePlus Pad Go running OxygenOS.
+ 
+The tech stack will be Kotlin + Jetpack Compose, native Android. 
+The DXF will be processed using Chaquopy + the ezdxf Python library. 
+Chaquopy embeds a CPython runtime into the APK and allows the calling of Python from Kotlin.
