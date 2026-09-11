@@ -61,7 +61,7 @@ object DemoPlans {
         n("V04", 7200f, 7400f, NodeStatus.Open),
         n("V05", 7200f, 9600f, NodeStatus.Open),
         n("V06", 0f, 9600f, NodeStatus.Open),
-        n("V07", 4200f, 0f, NodeStatus.Failed),
+        n("V07", 4200f, 0f, NodeStatus.NotVisible),
         n("V08", 4200f, 5200f, NodeStatus.Open),
         n("V09", 11800f, 5200f, NodeStatus.Open),
         n("V10", 0f, 5200f, NodeStatus.Projected),
@@ -73,7 +73,7 @@ object DemoPlans {
         when (node.id) {
             "V01", "V10" -> node.copy(status = NodeStatus.Surveyed)
             "V02", "V03" -> node.copy(status = NodeStatus.Open)
-            else -> node.copy(status = if (node.status == NodeStatus.Failed) NodeStatus.Open else node.status)
+            else -> node.copy(status = if (node.status == NodeStatus.NotVisible) NodeStatus.Open else node.status)
         }
     }
 

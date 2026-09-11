@@ -1,62 +1,27 @@
 package com.example.smartmarkerfrontend.data
 
+import androidx.compose.ui.geometry.Offset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DxfParserTest {
     @Test
-    fun extractsPointsAndPolylines() {
-        val dxf = """
-            0
-            SECTION
-            2
-            ENTITIES
-            0
-            POINT
-            8
-            0
-            10
-            1000.0
-            20
-            2000.0
-            0
-            TEXT
-            10
-            1002.0
-            20
-            2001.0
-            1
-            V01
-            0
-            LINE
-            10
-            0.0
-            20
-            0.0
-            11
-            5000.0
-            21
-            0.0
-            0
-            CIRCLE
-            10
-            4200.0
-            20
-            800.0
-            40
-            50.0
-            0
-            ENDSEC
-            0
-            EOF
-        """.trimIndent()
+    fun buildsGeometryFromPlanLinePointsAndNodes() {
+        val extracted = DxfParser.fromParsed(
+            planLinePoints = listOf(
+                listOf(Offset(0f, 0f), Offset(5000f, 0f), Offset(5000f, 3000f), Offset(0f, 0f))
+            ),
+            nodes = listOf(MarkerNode("V01", 1000f, 2000f, NodeStatus.Open))
+        )
 
-        val extracted = DxfParser.extract(dxf)
-        assertTrue(extracted.nodes.isNotEmpty())
-        assertTrue(extracted.nodes.any { it.id.contains("V01") || it.x in 990f..1010f })
-        assertTrue(extracted.geometry.outlines.isNotEmpty() || extracted.geometry.circles.isNotEmpty())
-        val v01 = extracted.nodes.first { it.id.startsWith("V") }
-        assertEquals(NodeStatus.Open, v01.status)
+        assertEquals(1, extracted.planLinePoints.size)
+        assertEquals(4, extracted.planLinePoints[0].size)
+        assertEquals("V01", extracted.nodes.single().id)
+        assertEquals(NodeStatus.Open, extracted.nodes.single().status)
+        assertTrue(extracted.geometry.outlines.isNotEmpty())
+        assertTrue(extracted.geometry.outlines[0].closed)
+        assertTrue(extracted.geometry.bounds.width > 0f)
+        assertTrue(extracted.geometry.bounds.height > 0f)
     }
 }

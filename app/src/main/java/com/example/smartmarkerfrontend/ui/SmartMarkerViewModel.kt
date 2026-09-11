@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -239,7 +240,7 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { cur ->
                 val nodes = cur.nodes.map { n ->
                     if (n.id in ids) {
-                        n.copy(status = if (n.id == "V07") NodeStatus.Failed else NodeStatus.Surveyed)
+                        n.copy(status = if (n.id == "V07") NodeStatus.NotVisible else NodeStatus.Surveyed)
                     } else n
                 }
                 cur.copy(nodes = nodes, run = null)
@@ -392,15 +393,19 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val name = queryDisplayName(app, uri) ?: "plan.dxf"
-                    val text = app.contentResolver.openInputStream(uri)
-                        ?.bufferedReader()
-                        ?.use { it.readText() }
-                        ?: error("Could not read file")
-                    name to DxfParser.extract(text)
+                    val tmp = File.createTempFile("import-", ".dxf", app.cacheDir)
+                    try {
+                        app.contentResolver.openInputStream(uri)?.use { input ->
+                            tmp.outputStream().use { output -> input.copyTo(output) }
+                        } ?: error("Could not read file")
+                        name to DxfParser.extract(app, tmp)
+                    } finally {
+                        tmp.delete()
+                    }
                 }
             }
             result.onSuccess { (name, extracted) ->
-                if (extracted.nodes.isEmpty()) {
+                if (extracted.nodes.isEmpty() && extracted.planLinePoints.isEmpty()) {
                     _state.update { it.copy(importError = "No coordinates found in $name") }
                     return@onSuccess
                 }

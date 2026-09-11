@@ -258,7 +258,7 @@ private fun paintFor(status: NodeStatus): NodePaint = when (status) {
     NodeStatus.Open -> NodePaint(SmColors.bg, SmColors.ink)
     NodeStatus.Surveyed -> NodePaint(SmColors.accent400, SmColors.accent700)
     NodeStatus.Projected -> NodePaint(SmColors.accent, SmColors.accent900)
-    NodeStatus.Failed -> NodePaint(SmColors.bg, SmColors.bad)
+    NodeStatus.NotVisible -> NodePaint(SmColors.bg, SmColors.bad)
 }
 
 private fun DrawScope.drawNodes(
@@ -315,7 +315,7 @@ private fun DrawScope.drawNodes(
             drawLine(paint.stroke, Offset(p.x, p.y - 19.5f), Offset(p.x, p.y - 9f), 1.4f, alpha = alpha)
             drawLine(paint.stroke, Offset(p.x, p.y + 9f), Offset(p.x, p.y + 19.5f), 1.4f, alpha = alpha)
         }
-        if (n.status == NodeStatus.Failed) {
+        if (n.status == NodeStatus.NotVisible) {
             drawLine(SmColors.bad, Offset(p.x - 9f, p.y - 9f), Offset(p.x + 9f, p.y + 9f), 2f, alpha = alpha)
         }
         if (state.projecting != null && n.id in state.projecting) {

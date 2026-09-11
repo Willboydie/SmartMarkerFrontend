@@ -195,7 +195,7 @@ private fun ActionStack(
 ) {
     val sel = state.selectedNodes
     val hidden = sel.filter { !state.inView(it) }
-    val anyUnsurveyed = sel.any { it.status == NodeStatus.Open || it.status == NodeStatus.Failed }
+    val anyUnsurveyed = sel.any { it.status == NodeStatus.Open || it.status == NodeStatus.NotVisible }
     val blockNote = when {
         state.projecting != null -> {
             val n = state.projecting.size
@@ -204,7 +204,7 @@ private fun ActionStack(
         !state.posed -> "Device moved — find Tags again before surveying or projecting."
         hidden.isNotEmpty() -> "Out of the marker’s view: ${hidden.joinToString { it.id }} — turn the marker to bring them in."
         sel.isNotEmpty() && anyUnsurveyed ->
-            "Survey before projecting: ${sel.filter { it.status == NodeStatus.Open || it.status == NodeStatus.Failed }.joinToString { it.id }}"
+            "Survey before projecting: ${sel.filter { it.status == NodeStatus.Open || it.status == NodeStatus.NotVisible }.joinToString { it.id }}"
         else -> ""
     }
     val surveyOff = sel.isEmpty() || !state.posed || hidden.isNotEmpty() || state.run != null || state.projecting != null
@@ -340,20 +340,20 @@ private fun statusLabel(st: NodeStatus) = when (st) {
     NodeStatus.Open -> "Unsurveyed"
     NodeStatus.Surveyed -> "Surveyed"
     NodeStatus.Projected -> "Marked"
-    NodeStatus.Failed -> "Failed"
+    NodeStatus.NotVisible -> "Not visible"
 }
 
 private fun statusTag(st: NodeStatus) = when (st) {
     NodeStatus.Open -> SmTagKind.Neutral
     NodeStatus.Surveyed, NodeStatus.Projected -> SmTagKind.Accent
-    NodeStatus.Failed -> SmTagKind.Outline
+    NodeStatus.NotVisible -> SmTagKind.Outline
 }
 
 private fun statusNote(st: NodeStatus) = when (st) {
     NodeStatus.Open -> "Not surveyed yet — projection stays locked until a return is captured."
     NodeStatus.Surveyed -> "Return captured. Ready to project."
     NodeStatus.Projected -> "Marked on the floor. Re-project to refresh the spot."
-    NodeStatus.Failed -> "No return here. Clear the line of sight and survey again."
+    NodeStatus.NotVisible -> "No return here. Clear the line of sight and survey again."
 }
 
 @Composable

@@ -9,7 +9,7 @@ import kotlin.math.hypot
 
 enum class AppScreen { Plan, Plans, Pose, Settings }
 
-enum class NodeStatus { Open, Surveyed, Projected, Failed }
+enum class NodeStatus { Open, Surveyed, Projected, NotVisible }
 
 enum class Units { Millimetres, Metres, Feet }
 
