@@ -1,24 +1,31 @@
 package com.example.smartmarkerfrontend.data
 
 /**
- * Tablet ↔ ESP32 NOW dongle contract from docs/data_packets.txt.
+ * Tablet ↔ ESP32 NOW dongle contract from docs/protocol.md.
  * The UI currently simulates these exchanges; UsbDongleManager is the hook
  * for the USB-C serial link (peak ~10 KB/s).
+ *
+ * Angles on the wire are radians in [0, 2π).
  */
 data class Pose(
     val eastMm: Float,
     val northMm: Float,
-    val yawDeg: Float
+    val upMm: Float,
+    val rollRad: Float,
+    val pitchRad: Float,
+    val yawRad: Float
 )
 
 enum class ConnectionStatus { Linked, Searching, Lost }
 
-enum class ProjectionMode { Off, Survey, Mark }
+enum class ProjectionMode { Off, Survey, Project }
 
 data class NodePacket(
     val id: String,
     val eastMm: Float,
-    val northMm: Float
+    val northMm: Float,
+    val cornerInnerAngleRad: Float,
+    val cornerOrientationRad: Float
 )
 
 sealed interface DeviceTelemetry {
@@ -39,10 +46,11 @@ sealed interface DeviceTelemetry {
         val laserPower: Int
     ) : DeviceTelemetry
 
-    data class SurveyComplete(
-        val surveyedNodes: List<String>,
-        val surveyedNodePositions: List<Pose>,
-        val nodesOutwithFov: List<String>
+    /** One result for a requested survey vertex. Sent once per id in `BEGIN_SURVEY`. */
+    data class SurveyPoint(
+        val nodeId: String,
+        val success: Boolean,
+        val pose: Pose
     ) : DeviceTelemetry
 
     data class ProjectionStart(

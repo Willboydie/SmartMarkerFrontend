@@ -8,21 +8,24 @@ import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.smartmarkerfrontend.data.AppScreen
-import com.example.smartmarkerfrontend.data.DemoPlans
+import com.example.smartmarkerfrontend.data.DeviceTelemetry
 import com.example.smartmarkerfrontend.data.DxfParser
+import com.example.smartmarkerfrontend.data.EmptyPlanGeometry
 import com.example.smartmarkerfrontend.data.MoveStep
-import com.example.smartmarkerfrontend.data.NodePacket
 import com.example.smartmarkerfrontend.data.NodeStatus
 import com.example.smartmarkerfrontend.data.PlanFile
 import com.example.smartmarkerfrontend.data.Pose
 import com.example.smartmarkerfrontend.data.RunKind
 import com.example.smartmarkerfrontend.data.RunProgress
 import com.example.smartmarkerfrontend.data.SmartMarkerState
-import com.example.smartmarkerfrontend.data.SurveyTag
+import com.example.smartmarkerfrontend.data.Tag
 import com.example.smartmarkerfrontend.data.TabletCommand
 import com.example.smartmarkerfrontend.data.Units
 import com.example.smartmarkerfrontend.data.degrees
 import com.example.smartmarkerfrontend.data.fitScale
+import com.example.smartmarkerfrontend.data.panForWorldAtScreen
+import com.example.smartmarkerfrontend.data.wrapTwoPi
+import com.example.smartmarkerfrontend.device.NodeIds
 import com.example.smartmarkerfrontend.device.UsbDongleManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,6 +34,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -41,25 +45,33 @@ import kotlin.math.roundToInt
 
 class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("smart_marker", Context.MODE_PRIVATE)
-    private val dongle = UsbDongleManager(app)
+    private val dongle = UsbDongleManager(app, viewModelScope)
 
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<SmartMarkerState> = _state.asStateFlow()
 
     private var runJob: Job? = null
-    private var lockJob: Job? = null
-    private var poseJob: Job? = null
     private var moved = false
+    private var deviceMovedLatched = false
 
     init {
-        if (dongle.attached.value) {
-            _state.update { it.copy(link = true) }
+        dongle.autoReconnect = prefs.getBoolean("autoRe", true)
+        viewModelScope.launch {
+            dongle.telemetry.collect { applyDeviceTelemetry(it) }
         }
+        viewModelScope.launch {
+            dongle.connected.collect { up ->
+                _state.update { it.copy(link = up) }
+            }
+        }
+        if (dongle.autoReconnect) dongle.start()
+    }
+
+    fun onHostResume() {
+        dongle.refresh()
     }
 
     private fun initialState(): SmartMarkerState {
-        val files = DemoPlans.seedFiles()
-        val open = files.first()
         val step = when (prefs.getString("step", "coarse")) {
             "fine" -> MoveStep.Fine
             else -> MoveStep.Coarse
@@ -71,14 +83,19 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
             else -> Units.Millimetres
         }
         return SmartMarkerState(
-            nodes = open.nodes,
-            geometry = open.geometry,
-            files = files,
+            screen = AppScreen.Plans,
+            nodes = emptyList(),
+            geometry = EmptyPlanGeometry,
+            files = emptyList(),
+            posed = false,
+            hadPose = false,
+            tags = listOf(Tag(1, false), Tag(2, false)),
             step = step,
             curTag = tag,
             units = units,
             beam = prefs.getInt("beam", 70),
-            autoReconnect = prefs.getBoolean("autoRe", true)
+            autoReconnect = prefs.getBoolean("autoRe", true),
+            link = false
         )
     }
 
@@ -120,9 +137,8 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         val k = clampScale(st.scale * factor)
         val cx = st.canvasSize.x / 2f
         val cy = st.canvasSize.y / 2f
-        val wx = (cx - st.pan.x) / st.scale
-        val wy = (cy - st.pan.y) / st.scale
-        _state.update { it.copy(scale = k, pan = Offset(cx - wx * k, cy - wy * k)) }
+        val world = st.screenToWorld(Offset(cx, cy))
+        _state.update { it.copy(scale = k, pan = panForWorldAtScreen(world.x, world.y, k, Offset(cx, cy))) }
     }
 
     fun fitPlan() {
@@ -186,16 +202,21 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
     fun closeMenus() = _state.update { it.copy(connOpen = false, userOpen = false) }
 
     fun toggleLink() {
-        _state.update { st ->
-            val next = !st.link
-            st.copy(link = next, connOpen = true)
+        if (dongle.connected.value) {
+            dongle.stop()
+        } else {
+            dongle.autoReconnect = _state.value.autoReconnect
+            dongle.start()
         }
+        _state.update { it.copy(connOpen = true) }
     }
 
     fun toggleAutoReconnect() {
         _state.update { st ->
-            prefs.edit().putBoolean("autoRe", !st.autoReconnect).apply()
-            st.copy(autoReconnect = !st.autoReconnect)
+            val next = !st.autoReconnect
+            prefs.edit().putBoolean("autoRe", next).apply()
+            dongle.autoReconnect = next
+            st.copy(autoReconnect = next)
         }
     }
 
@@ -229,21 +250,33 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         if (ids.any { id -> st.nodes.firstOrNull { it.id == id }?.let { !st.inView(it) } == true }) return
         dongle.send(TabletCommand.BeginSurvey(ids))
         runJob?.cancel()
+        _state.update {
+            it.copy(
+                isSurveying = true,
+                run = RunProgress(RunKind.Survey, ids)
+            )
+        }
+        if (dongle.connected.value) return
         runJob = viewModelScope.launch {
-            var pct = 0
-            while (pct < 100) {
-                val i = ((pct / 100f) * ids.size).toInt().coerceAtMost(ids.lastIndex)
-                _state.update { it.copy(run = RunProgress(RunKind.Survey, ids, pct, i)) }
-                delay(70)
-                pct += 4
+            for (id in ids) {
+                delay(SURVEY_POINT_PERIOD_MS)
+                if (!isActive) return@launch
+                val node = _state.value.nodes.firstOrNull { it.id == id }
+                val success = node != null && id != "V07"
+                val pose = Pose(
+                    eastMm = node?.x ?: 0f,
+                    northMm = node?.y ?: 0f,
+                    upMm = 0f,
+                    rollRad = 0f,
+                    pitchRad = 0f,
+                    yawRad = wrapTwoPi(Math.toRadians(_state.value.az.toDouble()).toFloat())
+                )
+                applySurveyPoint(DeviceTelemetry.SurveyPoint(id, success, pose))
             }
             _state.update { cur ->
-                val nodes = cur.nodes.map { n ->
-                    if (n.id in ids) {
-                        n.copy(status = if (n.id == "V07") NodeStatus.NotVisible else NodeStatus.Surveyed)
-                    } else n
-                }
-                cur.copy(nodes = nodes, run = null)
+                val run = cur.run
+                val done = run != null && run.kind == RunKind.Survey && run.reported.size >= run.ids.size
+                cur.copy(isSurveying = false, run = if (done) null else run)
             }
         }
     }
@@ -251,12 +284,14 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleProject() {
         val st = _state.value
         if (st.projecting != null) {
+            dongle.send(TabletCommand.SetProjectionMode(0))
             _state.update { it.copy(projecting = null) }
             return
         }
         val ids = st.selectedIds
         if (ids.isEmpty()) return
         dongle.send(TabletCommand.BeginProjection(ids))
+        if (dongle.connected.value) return
         _state.update { cur ->
             cur.copy(
                 projecting = ids,
@@ -267,7 +302,8 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelRun() {
         runJob?.cancel()
-        _state.update { it.copy(run = null) }
+        dongle.send(TabletCommand.SetProjectionMode(0))
+        _state.update { it.copy(run = null, isSurveying = false) }
     }
 
     fun setStep(step: MoveStep) {
@@ -282,10 +318,10 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addTag() {
         _state.update { st ->
-            val n = (st.tags.maxOfOrNull { it.n } ?: 0) + 1
+            val n = (st.tags.maxOfOrNull { it.id } ?: 0) + 1
             prefs.edit().putInt("curTag", n).apply()
             st.copy(
-                tags = st.tags + SurveyTag(n, false),
+                tags = st.tags + Tag(n, false),
                 curTag = n,
                 posed = false,
                 computing = false
@@ -293,31 +329,33 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun autoLock() {
+    fun beginTagSearch() {
         val st = _state.value
-        if (st.locking || st.computing) return
-        val tag = st.tags.firstOrNull { it.n == st.curTag } ?: return
-        if (tag.locked) return
+        if (st.posed || st.locking) return
         dongle.send(TabletCommand.BeginTagSearch)
-        lockJob?.cancel()
-        _state.update { it.copy(locking = true) }
-        lockJob = viewModelScope.launch {
-            delay(1400)
-            var allLocked = false
-            _state.update { cur ->
-                val tags = cur.tags.map { if (it.n == cur.curTag) it.copy(locked = true) else it }
-                allLocked = tags.count { it.locked } >= 2
-                dongle.send(TabletCommand.TagFound(cur.curTag))
-                cur.copy(locking = false, tags = tags, computing = allLocked)
-            }
-            if (allLocked) {
-                poseJob?.cancel()
-                poseJob = viewModelScope.launch {
-                    delay(1800)
-                    _state.update { it.copy(computing = false, posed = true, hadPose = true) }
-                }
-            }
+        _state.update { it.copy(locking = true, computing = false) }
+    }
+
+    fun confirmTag() {
+        val st = _state.value
+        if (!st.locking || st.posed) return
+        val tag = st.tags.firstOrNull { it.id == st.curTag } ?: return
+        if (tag.aligned) return
+        dongle.send(TabletCommand.TagFound(st.curTag))
+        var needNextSearch = false
+        _state.update { cur ->
+            val tags = cur.tags.map { if (it.id == cur.curTag) it.copy(aligned = true) else it }
+            val allLocked = tags.count { it.aligned } >= 2
+            needNextSearch = !allLocked
+            cur.copy(
+                tags = tags,
+                posed = allLocked,
+                hadPose = cur.hadPose || allLocked,
+                locking = !allLocked,
+                computing = false
+            )
         }
+        if (needNextSearch) dongle.send(TabletCommand.BeginTagSearch)
     }
 
     fun nudge(dxAz: Float, dyEl: Float) {
@@ -333,8 +371,13 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setOrigin() {
         val st = _state.value
-        dongle.send(TabletCommand.SetOrigin(Pose(0f, 0f, st.az)))
-        _state.update { it.copy(hadPose = true) }
+        if (st.posed || st.locking) return
+        val yaw = wrapTwoPi(Math.toRadians(st.az.toDouble()).toFloat())
+        _state.update { it.copy(hadPose = true, locking = true, computing = false) }
+        dongle.send(
+            TabletCommand.SetOrigin(Pose(0f, 0f, 0f, 0f, 0f, yaw)),
+            TabletCommand.BeginTagSearch
+        )
     }
 
     fun resetPose() {
@@ -342,7 +385,8 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
             st.copy(
                 posed = false,
                 computing = false,
-                tags = st.tags.map { it.copy(locked = false) },
+                locking = false,
+                tags = st.tags.map { it.copy(aligned = false) },
                 selectedIds = emptyList()
             )
         }
@@ -353,8 +397,9 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
             st.copy(
                 posed = false,
                 computing = false,
+                locking = false,
                 hadPose = false,
-                tags = st.tags.map { it.copy(locked = false) },
+                tags = st.tags.map { it.copy(aligned = false) },
                 selectedIds = emptyList()
             )
         }
@@ -369,9 +414,7 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
             val sized = st.canvasSize
             val (s, p) = if (sized.x > 8f) fitScale(sized.x, sized.y, chosen.geometry) else st.scale to st.pan
             dongle.send(
-                TabletCommand.RegisterNodes(
-                    chosen.nodes.map { NodePacket(it.id, it.x, it.y) }
-                )
+                TabletCommand.RegisterNodes(chosen.nodes.map { it.toPacket() })
             )
             st.copy(
                 files = saved,
@@ -389,6 +432,7 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun importDxf(uri: Uri) {
         viewModelScope.launch {
+            _state.update { it.copy(importing = true, importError = null) }
             val app = getApplication<Application>()
             val result = withContext(Dispatchers.IO) {
                 runCatching {
@@ -406,7 +450,12 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
             }
             result.onSuccess { (name, extracted) ->
                 if (extracted.nodes.isEmpty() && extracted.planLinePoints.isEmpty()) {
-                    _state.update { it.copy(importError = "No coordinates found in $name") }
+                    _state.update {
+                        it.copy(
+                            importing = false,
+                            importError = "No coordinates found in $name"
+                        )
+                    }
                     return@onSuccess
                 }
                 val today = SimpleDateFormat("d MMM yyyy", Locale.UK).format(Date())
@@ -418,9 +467,7 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
                         fitScale(sized.x, sized.y, extracted.geometry)
                     } else st.scale to st.pan
                     dongle.send(
-                        TabletCommand.RegisterNodes(
-                            extracted.nodes.map { NodePacket(it.id, it.x, it.y) }
-                        )
+                        TabletCommand.RegisterNodes(extracted.nodes.map { it.toPacket() })
                     )
                     st.copy(
                         files = listOf(file) + rest,
@@ -431,16 +478,111 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
                         projecting = null,
                         scale = s,
                         pan = p,
-                        importError = null
+                        importError = null,
+                        importing = false
                     )
                 }
             }.onFailure { e ->
-                _state.update { it.copy(importError = e.message ?: "Could not open DXF") }
+                _state.update {
+                    it.copy(importing = false, importError = e.message ?: "Could not open DXF")
+                }
             }
         }
     }
 
     fun dismissImportError() = _state.update { it.copy(importError = null) }
+
+    private fun applyDeviceTelemetry(msg: DeviceTelemetry) {
+        when (msg) {
+            is DeviceTelemetry.Handshake -> {
+                _state.update { it.copy(firmwareVersion = msg.firmwareVersion) }
+                val st = _state.value
+                dongle.send(TabletCommand.RegisterNodes(st.nodes.map { it.toPacket() }))
+                dongle.send(TabletCommand.SetLaserPower(st.beam))
+            }
+            is DeviceTelemetry.Regular -> applyRegularTelemetry(msg)
+            is DeviceTelemetry.SurveyPoint -> applySurveyPoint(msg)
+            is DeviceTelemetry.ProjectionStart -> {
+                val ids = msg.projectedNodes.map { it.id }
+                _state.update { st ->
+                    st.copy(
+                        projecting = ids,
+                        nodes = st.nodes.map { n ->
+                            if (ids.any { id -> sameNode(n.id, id) }) {
+                                n.copy(status = NodeStatus.Projected)
+                            } else n
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private fun applySurveyPoint(msg: DeviceTelemetry.SurveyPoint) {
+        _state.update { st ->
+            val run = st.run
+            if (run == null || run.kind != RunKind.Survey) return@update st
+            val planId = st.nodes.firstOrNull { sameNode(it.id, msg.nodeId) }?.id
+                ?: run.ids.firstOrNull { sameNode(it, msg.nodeId) }
+                ?: msg.nodeId
+            val nodes = st.nodes.map { n ->
+                if (sameNode(n.id, planId)) {
+                    n.copy(status = if (msg.success) NodeStatus.Surveyed else NodeStatus.NotVisible)
+                } else n
+            }
+            val reported = if (run.reported.any { sameNode(it, planId) }) {
+                run.reported
+            } else {
+                run.reported + planId
+            }
+            val updated = run.copy(reported = reported)
+            val finished = updated.reported.size >= updated.ids.size && !st.isSurveying
+            st.copy(nodes = nodes, run = if (finished) null else updated)
+        }
+    }
+
+    private fun applyRegularTelemetry(msg: DeviceTelemetry.Regular) {
+        val azDeg = Math.toDegrees(msg.effectiveYaw.toDouble()).toFloat()
+        val becameMoved = msg.moved && !deviceMovedLatched
+        deviceMovedLatched = msg.moved
+        val poseValid = msg.lastKnownPose != null
+        _state.update { st ->
+            val projecting = if (!msg.isProjecting) null else st.projecting
+            val tags = if (becameMoved) st.tags.map { it.copy(aligned = false) } else st.tags
+            val run = st.run
+            val surveyFinished = run != null &&
+                run.kind == RunKind.Survey &&
+                run.reported.size >= run.ids.size &&
+                !msg.isSurveying
+            st.copy(
+                laser = msg.laserOn,
+                hadPose = msg.originIsSet || (st.hadPose && !becameMoved),
+                posed = when {
+                    msg.moved -> false
+                    st.locking -> st.posed
+                    poseValid -> true
+                    else -> st.posed
+                },
+                computing = if (becameMoved) false else st.computing,
+                locking = when {
+                    msg.moved -> false
+                    else -> st.locking
+                },
+                tags = tags,
+                deviceYawRad = msg.effectiveYaw,
+                az = azDeg,
+                projecting = projecting,
+                isSurveying = msg.isSurveying,
+                run = if (surveyFinished) null else run
+            )
+        }
+    }
+
+    override fun onCleared() {
+        runJob?.cancel()
+        dongle.release()
+        super.onCleared()
+    }
 
     private fun queryDisplayName(app: Application, uri: Uri): String? {
         val cursor = app.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
@@ -450,10 +592,10 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         return uri.lastPathSegment
     }
 
-    override fun onCleared() {
-        runJob?.cancel()
-        lockJob?.cancel()
-        poseJob?.cancel()
-        super.onCleared()
+    private fun sameNode(planId: String, wireId: String): Boolean =
+        planId == wireId || NodeIds.toWire(planId) == NodeIds.toWire(wireId)
+
+    companion object {
+        const val SURVEY_POINT_PERIOD_MS = 5_000L
     }
 }

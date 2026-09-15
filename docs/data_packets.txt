@@ -19,10 +19,10 @@ REGULAR TELEMETRY
 - laserPower
 
 
-UPON SURVEY COMPLETION
-- surveyedNodes
-- surveyedNodePositions
-- nodesOutwithFOV
+UPON EACH SURVEY POINT
+- nodeID
+- success
+- pose (measured if success)
 
 
 UPON PROJECTION START
@@ -33,16 +33,13 @@ TABLET -> DEVICE
 CMDS
 - setLaserPower(int duty)
 - setProjectionMode(int mode)
-- beginTagSearch
+- beginTagSearch   (Pose: begin Tag Finding; origin not required)
 - beginSurvey(int nodeIDs[i])
 - beginProjection(int nodeIDs[i])
-- tagFound(int tagID)
+- tagFound(int tagID)   (two distinct ids → poseValid + originIsSet)
 - nudgeBeamX(float dx)
 - nudgeBeamY(float dy)
-- setOrigin(Pose origin)
+- setOrigin(Pose origin)   (optional force-pose; not the Pose screen CTA)
 
 ON CONNECTION / NEW PLAN SELECTION
 - registerNodes(Node planNodes[N])
-
-
-

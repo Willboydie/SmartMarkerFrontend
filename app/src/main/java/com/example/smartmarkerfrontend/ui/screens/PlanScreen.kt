@@ -40,7 +40,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smartmarkerfrontend.data.NodeStatus
-import com.example.smartmarkerfrontend.data.RunKind
 import com.example.smartmarkerfrontend.data.SmartMarkerState
 import com.example.smartmarkerfrontend.data.formatCoord
 import com.example.smartmarkerfrontend.ui.SmartMarkerViewModel
@@ -70,8 +69,8 @@ fun PlanScreen(state: SmartMarkerState, vm: SmartMarkerViewModel) {
         1f, 0.25f, infiniteRepeatable(tween(1100), RepeatMode.Reverse), label = "shA"
     )
     val view = LocalView.current
-    LaunchedEffect(state.run, state.projecting) {
-        view.keepScreenOn = state.run != null || state.projecting != null
+    LaunchedEffect(state.run, state.projecting, state.isSurveying) {
+        view.keepScreenOn = state.run != null || state.projecting != null || state.isSurveying
     }
     DisposableEffect(view) {
         onDispose { view.keepScreenOn = false }
@@ -170,10 +169,6 @@ fun PlanScreen(state: SmartMarkerState, vm: SmartMarkerViewModel) {
         }
 
         ActionStack(state, vm, Modifier.align(Alignment.BottomEnd).padding(16.dp))
-
-        if (state.run != null) {
-            RunOverlay(state, vm::cancelRun)
-        }
     }
 }
 
@@ -199,9 +194,10 @@ private fun ActionStack(
     val blockNote = when {
         state.projecting != null -> {
             val n = state.projecting.size
-            "Beam live on $n ${if (n == 1) "point" else "points"} — mark the floor, then halt."
+            "Beam live on $n ${if (n == 1) "point" else "points"} — project the beam, then halt."
         }
-        !state.posed -> "Device moved — find Tags again before surveying or projecting."
+        !state.posed && state.hadPose -> "Device moved — Find Tags on the Pose screen before surveying or projecting."
+        !state.posed -> "Origin not set — Set Origin on the Pose screen before surveying or projecting."
         hidden.isNotEmpty() -> "Out of the marker’s view: ${hidden.joinToString { it.id }} — turn the marker to bring them in."
         sel.isNotEmpty() && anyUnsurveyed ->
             "Survey before projecting: ${sel.filter { it.status == NodeStatus.Open || it.status == NodeStatus.NotVisible }.joinToString { it.id }}"
@@ -339,7 +335,7 @@ private fun MetaRow(k: String, v: String) {
 private fun statusLabel(st: NodeStatus) = when (st) {
     NodeStatus.Open -> "Unsurveyed"
     NodeStatus.Surveyed -> "Surveyed"
-    NodeStatus.Projected -> "Marked"
+    NodeStatus.Projected -> "Projected"
     NodeStatus.NotVisible -> "Not visible"
 }
 
@@ -352,70 +348,6 @@ private fun statusTag(st: NodeStatus) = when (st) {
 private fun statusNote(st: NodeStatus) = when (st) {
     NodeStatus.Open -> "Not surveyed yet — projection stays locked until a return is captured."
     NodeStatus.Surveyed -> "Return captured. Ready to project."
-    NodeStatus.Projected -> "Marked on the floor. Re-project to refresh the spot."
+    NodeStatus.Projected -> "Beam projected on the floor. Re-project to refresh the spot."
     NodeStatus.NotVisible -> "No return here. Clear the line of sight and survey again."
-}
-
-@Composable
-private fun RunOverlay(state: SmartMarkerState, onCancel: () -> Unit) {
-    val run = state.run ?: return
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(SmColors.neutral900.copy(alpha = 0.42f)),
-        contentAlignment = Alignment.Center
-    ) {
-        BlueprintBox(
-            Modifier.width(330.dp),
-            markTopLeft = true,
-            markTopRight = true,
-            markBottomLeft = true,
-            markBottomRight = true
-        ) {
-            Column(
-                Modifier.padding(start = 24.dp, end = 24.dp, top = 26.dp, bottom = 22.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                Text(
-                    if (run.kind == RunKind.Survey) "SURVEYING" else "PROJECTING",
-                    fontFamily = BarlowCondensed,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 12.sp,
-                    letterSpacing = 2.sp,
-                    color = SmColors.accent700
-                )
-                Box(Modifier.size(132.dp), contentAlignment = Alignment.Center) {
-                    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
-                        val stroke = 6.dp.toPx()
-                        drawCircle(SmColors.ink.copy(alpha = 0.12f), 56.dp.toPx(), style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
-                        drawArc(
-                            color = SmColors.accent,
-                            startAngle = -90f,
-                            sweepAngle = run.pct / 100f * 360f,
-                            useCenter = false,
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(stroke, cap = androidx.compose.ui.graphics.StrokeCap.Butt)
-                        )
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("${run.pct}%", fontFamily = BarlowCondensed, fontWeight = FontWeight.SemiBold, fontSize = 34.sp)
-                        Text(
-                            "${run.index + 1} / ${run.ids.size}",
-                            fontFamily = Barlow,
-                            fontSize = 10.sp,
-                            letterSpacing = 1.4.sp,
-                            color = SmColors.neutral700
-                        )
-                    }
-                }
-                Text(
-                    "Hold still — reading return from ${run.ids.getOrElse(run.index) { "" }}",
-                    fontFamily = Barlow,
-                    fontSize = 12.5.sp,
-                    color = SmColors.ink.copy(alpha = 0.7f)
-                )
-                SmButton("Cancel", onCancel, style = SmButtonStyle.Secondary, modifier = Modifier.fillMaxWidth())
-            }
-        }
-    }
 }

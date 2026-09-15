@@ -2,7 +2,7 @@
 
 This is the Android tablet app for the Smart Marker. It is a Kotlin + Jetpack Compose application aimed at a OnePlus Pad Go (landscape). The operator loads a site plan, positions the marker, then surveys and projects vertices onto the floor.
 
-The UI was ported from the Industry-themed mock in `UI/`. Product intent lives in `docs/project_overview`. The USB packet contract lives in `docs/data_packets.txt`.
+The UI was ported from the Industry-themed mock in `UI/`. Product intent lives in `docs/project_overview`. The USB/NOW wire spec lives in `docs/protocol.md` (field sketch: `docs/data_packets.txt`).
 
 ---
 
@@ -12,7 +12,7 @@ The UI was ported from the Industry-themed mock in `UI/`. Product intent lives i
 | --- | --- | --- |
 | Plan canvas | Pinch/zoom, drag/pan, tap vertices, FOV wedge, survey / project | Working (device actions simulated) |
 | Plans | Switch demo DXFs or import a `.dxf` from the tablet | Working (Kotlin DXF reader) |
-| Pose | Set origin, find tags, nudge the beam, lock two tags | Working (tag search simulated) |
+| Pose | Begin Tag Finding, nudge the beam, lock two tags | Working (`BEGIN_TAG_SEARCH` / `TAG_FOUND`; pose also follows telemetry `poseValid`) |
 | Settings | Units, laser brightness, link, about | Working (link is a UI toggle until serial is wired) |
 | USB-C dongle | Talk to the ESP32 NOW dongle (~10 KB/s peak) | Types + USB host hook only |
 | Installable APK | Run from Android Studio onto the Pad Go | Working |
@@ -58,7 +58,8 @@ Design inputs (not compiled into the APK):
 | `UI/Smart Marker.dc.html` | Interactive mock this app was ported from |
 | `UI/industry.css` | Colour, type, and blueprint tokens |
 | `docs/project_overview` | Product / stack notes |
-| `docs/data_packets.txt` | Tablet ↔ device field list |
+| `docs/protocol.md` | Tablet ↔ device framing, cmd bytes, state machine (for firmware) |
+| `docs/data_packets.txt` | Field-list sketch the protocol implements |
 
 ---
 
@@ -98,7 +99,7 @@ Each row is a behaviour. “Governs” means: change that file first. The ViewMo
 | Default Riverside Plot 14 geometry + V01–V12 | `data/DemoPlan.kt` | Loaded by ViewModel `initialState()` |
 | Node status colours and FOV math | `data/Models.kt` (`NodeStatus`, `inMarkerView`, `SmartMarkerState`) | `PlanCanvas.kt`, `PlanScreen.kt` |
 
-World units are millimetres. Screen position is `pan + world * scale` (`SmartMarkerState.worldToScreen`).
+World units are millimetres (x = east, y = north). Screen position is `pan.x + east * scale`, `pan.y - north * scale` so +east is right and +north is up (`SmartMarkerState.worldToScreen`).
 
 ### Plans and DXF import
 
@@ -117,17 +118,17 @@ World units are millimetres. Screen position is `pan + world * scale` (`SmartMar
 
 | Subroutine | Governs | Also involved |
 | --- | --- | --- |
-| Pose page (title, origin button, tag row, D-pad) | `ui/screens/PoseScreen.kt` | ViewModel methods below |
-| Set current pose as origin | ViewModel `setOrigin` | `TabletCommand.SetOrigin` |
+| Pose page (begin / pad / identified) | `ui/screens/PoseScreen.kt` | ViewModel methods below |
+| Begin Tag Finding | ViewModel `beginTagSearch` | `TabletCommand.BeginTagSearch` |
 | Fine / coarse nudge step | ViewModel `setStep` | Persisted in `SharedPreferences` (`smart_marker`) |
-| Choose / add a survey tag | ViewModel `pickTag`, `addTag` | `PoseScreen.kt` dropdown |
-| Align current tag (timed search) | ViewModel `autoLock` | `TabletCommand.BeginTagSearch` / `TagFound` |
+| Choose / add a survey tag | ViewModel `pickTag`, `addTag` | Pad dropdown while searching |
+| Confirm current tag | ViewModel `confirmTag` | `TabletCommand.TagFound`; second search starts automatically |
 | Nudge beam (az / el) | ViewModel `nudge` | `TabletCommand.NudgeBeamX` / `NudgeBeamY`; FOV heading uses `az` |
-| Reposition (clear tag locks, keep origin) | ViewModel `resetPose` | — |
-| Clear origin entirely | ViewModel `clearOrigin` | — |
-| Continue to plan | ViewModel `go(AppScreen.Plan)` | `PoseScreen.kt` |
+| Reposition (clear tag locks, keep origin) | ViewModel `resetPose` | Returns to begin; no wire command |
+| Clear origin entirely | ViewModel `clearOrigin` | UI-only; no wire command |
+| Continue to plan | ViewModel `go(AppScreen.Plan)` | Shown with Reposition / Clear origin when posed |
 
-Heading used by the FOV wedge is derived in `SmartMarkerState.headingRad` from azimuth. Two locked tags plus a short “computing” delay marks the site as posed.
+Heading used by the FOV wedge is `SmartMarkerState.headingRad` (telemetry `effectiveYaw` when present). Two distinct `TAG_FOUND` ids — or telemetry `poseValid` — mark the site as posed and hide the pad.
 
 ### Settings
 
@@ -144,10 +145,10 @@ Heading used by the FOV wedge is derived in `SmartMarkerState.headingRad` from a
 
 | Subroutine | Governs | Also involved |
 | --- | --- | --- |
-| Packet shapes (telemetry in, commands out) | `data/DeviceProtocol.kt` | Spec: `docs/data_packets.txt` |
+| Packet shapes (telemetry in, commands out) | `data/DeviceProtocol.kt` | Spec: `docs/protocol.md` |
 | USB host device list / VID match | `device/UsbDongleManager.kt` | `res/xml/usb_device_filter.xml` |
 | Attach intent on the activity | `AndroidManifest.xml` | Filter lists Silicon Labs, CH340, FTDI, Espressif, Prolific |
-| Command send hook (not yet serial-framed) | `UsbDongleManager.send` | Called from the ViewModel on survey, project, nudge, origin, register-nodes, laser |
+| Command send hook | `UsbDongleManager.send` | Called from the ViewModel on survey, project, nudge, tag search, register-nodes, laser |
 
 Until framing is implemented, the UI still **simulates** survey progress, projection, tag lock, and link state so the designed screens can be exercised without hardware.
 
@@ -202,7 +203,7 @@ Open the project in Android Studio, select the Pad Go, Run. USB debugging must b
 
 ## Not wired yet
 
-1. **Serial protocol on the dongle** — `UsbDongleManager.send` is a no-op beyond detection. Fill this in against `DeviceProtocol` / `data_packets.txt`.
+1. **Serial protocol on the dongle** — `UsbDongleManager.send` is a no-op beyond detection. Fill this in against `DeviceProtocol` / `docs/protocol.md`.
 2. **Chaquopy + ezdxf** — documented as the long-term DXF stack; the running importer is `DxfParser`.
 3. **Real user / site accounts** — header user is the mock profile (`D. Whitfield`). Switch site / sign out are placeholders.
 4. **Firmware update check** — button exists on Settings, no backend.

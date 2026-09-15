@@ -57,7 +57,7 @@ fun PlansScreen(state: SmartMarkerState, vm: SmartMarkerViewModel) {
             Column {
                 Text("Plans", fontFamily = BarlowCondensed, fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
                 Text(
-                    "Tap a plan to open it on the canvas.",
+                    if (state.files.isEmpty()) "Import a .dxf to add a plan." else "Tap a plan to open it on the canvas.",
                     fontFamily = Barlow,
                     fontSize = 13.sp,
                     color = SmColors.ink.copy(alpha = 0.6f)
@@ -71,35 +71,57 @@ fun PlansScreen(state: SmartMarkerState, vm: SmartMarkerViewModel) {
                 markBottomLeft = true,
                 markBottomRight = true
             ) {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
-                    state.files.forEachIndexed { i, file ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable { vm.openPlan(file.name) }
-                                .padding(vertical = 16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            Icon(
-                                SmIcons.File,
-                                contentDescription = null,
-                                tint = if (file.open) SmColors.accent else SmColors.ink,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Column(Modifier.weight(1f)) {
-                                Text(file.name, fontFamily = BarlowCondensed, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp)
-                                Text(
-                                    "Uploaded ${file.uploaded}",
-                                    fontFamily = Barlow,
-                                    fontSize = 11.5.sp,
-                                    color = SmColors.ink.copy(alpha = 0.55f)
+                if (state.files.isEmpty()) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 28.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            "No plans yet",
+                            fontFamily = BarlowCondensed,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.5.sp
+                        )
+                        Text(
+                            "Import a .dxf file from this tablet to open it on the canvas.",
+                            fontFamily = Barlow,
+                            fontSize = 12.sp,
+                            color = SmColors.ink.copy(alpha = 0.58f)
+                        )
+                    }
+                } else {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                        state.files.forEachIndexed { i, file ->
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { vm.openPlan(file.name) }
+                                    .padding(vertical = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Icon(
+                                    SmIcons.File,
+                                    contentDescription = null,
+                                    tint = if (file.open) SmColors.accent else SmColors.ink,
+                                    modifier = Modifier.size(20.dp)
                                 )
+                                Column(Modifier.weight(1f)) {
+                                    Text(file.name, fontFamily = BarlowCondensed, fontWeight = FontWeight.SemiBold, fontSize = 15.5.sp)
+                                    Text(
+                                        "Uploaded ${file.uploaded}",
+                                        fontFamily = Barlow,
+                                        fontSize = 11.5.sp,
+                                        color = SmColors.ink.copy(alpha = 0.55f)
+                                    )
+                                }
+                                SmTag(if (file.open) "Open" else "Uploaded", if (file.open) SmTagKind.Accent else SmTagKind.Neutral)
                             }
-                            SmTag(if (file.open) "Open" else "Uploaded", if (file.open) SmTagKind.Accent else SmTagKind.Neutral)
-                        }
-                        if (i != state.files.lastIndex) {
-                            HorizontalDivider(color = SmColors.ink.copy(alpha = 0.10f), thickness = 1.dp)
+                            if (i != state.files.lastIndex) {
+                                HorizontalDivider(color = SmColors.ink.copy(alpha = 0.10f), thickness = 1.dp)
+                            }
                         }
                     }
                 }

@@ -67,21 +67,5 @@ object DemoPlans {
         n("V10", 0f, 5200f, NodeStatus.Projected),
         n("V11", 9500f, 6300f, NodeStatus.Open),
         n("V12", 2100f, 7600f, NodeStatus.Open)
-    )
-
-    fun revBNodes(): List<MarkerNode> = revCNodes().map { node ->
-        when (node.id) {
-            "V01", "V10" -> node.copy(status = NodeStatus.Surveyed)
-            "V02", "V03" -> node.copy(status = NodeStatus.Open)
-            else -> node.copy(status = if (node.status == NodeStatus.NotVisible) NodeStatus.Open else node.status)
-        }
-    }
-
-    fun masterNodes(): List<MarkerNode> = revCNodes().map { it.copy(status = NodeStatus.Open) }
-
-    fun seedFiles(): List<PlanFile> = listOf(
-        PlanFile("plot-14-ground-rev-C.dxf", "8 Sep 2026", true, revCNodes(), riversideGeometry),
-        PlanFile("plot-14-ground-rev-B.dxf", "2 Sep 2026", false, revBNodes(), riversideGeometry),
-        PlanFile("site-setout-master.dxf", "28 Aug 2026", false, masterNodes(), riversideGeometry)
-    )
+    ).map { it.withPlanCorners(riversideGeometry) }
 }

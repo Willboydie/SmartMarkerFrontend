@@ -6,13 +6,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.ui.graphics.toArgb
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.smartmarkerfrontend.ui.SmartMarkerViewModel
 import com.example.smartmarkerfrontend.ui.theme.SmartMarkerFrontendTheme
 import com.example.smartmarkerfrontend.ui.theme.SmColors
 
 class MainActivity : ComponentActivity() {
+    private val vm: SmartMarkerViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -23,9 +25,13 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             SmartMarkerFrontendTheme {
-                val vm: SmartMarkerViewModel = viewModel()
                 SmartMarkerApp(vm)
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        vm.onHostResume()
     }
 }

@@ -114,23 +114,23 @@ fun TopBar(state: SmartMarkerState, vm: SmartMarkerViewModel) {
     }
     val poseText = when {
         state.posed -> "Pose Known"
-        state.computing -> "Computing pose…"
-        state.hadPose -> "Device Moved: Reposition"
-        else -> "Pose Not Known: Set Origin"
+        state.locking -> "Finding tags…"
+        state.hadPose -> "Device Moved"
+        else -> "Origin Not Set"
     }
     val poseFg = when {
         state.posed -> SmColors.accent700
-        state.computing -> SmColors.ink
+        state.locking -> SmColors.ink
         else -> SmColors.badText
     }
     val poseBorder = when {
         state.posed -> SmColors.accent
-        state.computing -> SmColors.divider
+        state.locking -> SmColors.divider
         else -> SmColors.bad
     }
     val poseBg = when {
         state.posed -> SmColors.accent.copy(alpha = 0.12f)
-        state.computing -> androidx.compose.ui.graphics.Color.Transparent
+        state.locking -> androidx.compose.ui.graphics.Color.Transparent
         else -> SmColors.bad.copy(alpha = 0.14f)
     }
     val laserOn = state.laserOn
@@ -184,7 +184,7 @@ fun TopBar(state: SmartMarkerState, vm: SmartMarkerViewModel) {
                 foreground = poseFg,
                 border = poseBorder,
                 background = poseBg,
-                icon = if (state.posed) SmIcons.PoseOk else if (!state.computing) SmIcons.PoseWarn else SmIcons.Pose
+                icon = if (state.posed) SmIcons.PoseOk else if (!state.locking) SmIcons.PoseWarn else SmIcons.Pose
             )
 
             Row(

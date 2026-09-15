@@ -52,11 +52,14 @@ object DxfParser {
     internal fun fromParsed(
         planLinePoints: List<List<Offset>>,
         nodes: List<MarkerNode>
-    ): Extracted = Extracted(
-        planLinePoints = planLinePoints,
-        nodes = nodes,
-        geometry = geometryFrom(planLinePoints, nodes)
-    )
+    ): Extracted {
+        val geometry = geometryFrom(planLinePoints, nodes)
+        return Extracted(
+            planLinePoints = planLinePoints,
+            nodes = nodes.map { it.withPlanCorners(geometry) },
+            geometry = geometry
+        )
+    }
 
     @Synchronized
     private fun ensureStarted(context: Context) {
@@ -166,7 +169,7 @@ object DxfParser {
         }
         val bounds = boundsOf(allPts) ?: Rect(0f, 0f, 1000f, 1000f)
         val pad = max(bounds.width, bounds.height) * 0.04f
-        val marker = Offset(bounds.center.x, bounds.bottom + bounds.height * 0.08f)
+        val marker = Offset(bounds.center.x, bounds.top - bounds.height * 0.08f)
         return PlanGeometry(
             bounds = Rect(bounds.left - pad, bounds.top - pad, bounds.right + pad, bounds.bottom + pad),
             outlines = outlines,

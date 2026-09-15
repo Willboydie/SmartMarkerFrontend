@@ -23,5 +23,6 @@ class DxfParserTest {
         assertTrue(extracted.geometry.outlines[0].closed)
         assertTrue(extracted.geometry.bounds.width > 0f)
         assertTrue(extracted.geometry.bounds.height > 0f)
+        assertTrue(extracted.geometry.marker.y < extracted.geometry.bounds.center.y)
     }
 }

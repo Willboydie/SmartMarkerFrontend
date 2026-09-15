@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -23,10 +24,11 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.dp
 import com.example.smartmarkerfrontend.data.NodeMarkStyle
 import com.example.smartmarkerfrontend.data.NodeStatus
 import com.example.smartmarkerfrontend.data.SmartMarkerState
+import com.example.smartmarkerfrontend.data.panForWorldAtScreen
+import com.example.smartmarkerfrontend.data.screenToWorld
 import com.example.smartmarkerfrontend.ui.theme.SmColors
 import kotlin.math.cos
 import kotlin.math.max
@@ -60,7 +62,7 @@ fun PlanCanvas(
     val holder = remember { GestureHolder() }
     holder.scale = state.scale
     holder.pan = state.pan
-    holder.locked = state.run != null
+    holder.locked = state.run != null || state.isSurveying
 
     val panCb by rememberUpdatedState(onPan)
     val pinchCb by rememberUpdatedState(onPinch)
@@ -124,10 +126,9 @@ fun PlanCanvas(
                                             val dist = (pts[0] - pts[1]).getDistance()
                                             val k = (ps.scale * (dist / ps.dist)).coerceIn(0.01f, 8f)
                                             val m = Offset((pts[0].x + pts[1].x) / 2f, (pts[0].y + pts[1].y) / 2f)
-                                            val wx = (ps.mid.x - ps.pan.x) / ps.scale
-                                            val wy = (ps.mid.y - ps.pan.y) / ps.scale
+                                            val world = screenToWorld(ps.mid, ps.scale, ps.pan)
                                             dragged = true
-                                            pinchCb(k, Offset(m.x - wx * k, m.y - wy * k))
+                                            pinchCb(k, panForWorldAtScreen(world.x, world.y, k, m))
                                         }
                                     }
                                     change.consume()
@@ -147,7 +148,7 @@ fun PlanCanvas(
     ) {
         drawRect(SmColors.bg)
         if (state.grid) drawGrid(state)
-        // Draw the plan in the same screen space as nodes/FOV (pan + world * scale).
+        // Draw the plan in the same screen space as nodes/FOV (east right, north up).
         // DrawTransform.scale() defaults to the canvas centre as pivot, which made
         // the walls drift toward the bottom-right except near 1:1 world-to-pixel.
         drawPlan(state)
@@ -218,31 +219,41 @@ private fun com.example.smartmarkerfrontend.data.Polyline.toScreenPath(state: Sm
         if (closed) path.close()
     }
 
+private const val MARKER_TIP_PX = 64f
+private const val MARKER_BASE_PX = 36f
+
 private fun DrawScope.drawFov(state: SmartMarkerState) {
-    val u = state.worldToScreen(state.geometry.marker.x, state.geometry.marker.y)
+    val origin = state.worldToScreen(state.geometry.marker.x, state.geometry.marker.y)
     val fr = com.example.smartmarkerfrontend.data.DemoPlans.RANGE * state.scale
     val head = state.headingRad
     val half = com.example.smartmarkerfrontend.data.DemoPlans.HALF_FOV
-    fun pt(a: Float, r: Float) = Offset(u.x + r * cos(a), u.y + r * sin(a))
+    fun pt(from: Offset, a: Float, r: Float) = Offset(from.x + r * cos(a), from.y - r * sin(a))
+    val tip = pt(origin, head, MARKER_TIP_PX)
+    val radius = fr.coerceAtLeast(1f)
     val wedge = Path().apply {
-        moveTo(u.x, u.y)
-        val a = pt(head - half, fr)
+        moveTo(tip.x, tip.y)
+        val a = pt(tip, head - half, radius)
         lineTo(a.x, a.y)
         arcTo(
-            Rect(u.x - fr, u.y - fr, u.x + fr, u.y + fr),
-            Math.toDegrees((head - half).toDouble()).toFloat(),
-            Math.toDegrees((2f * half).toDouble()).toFloat(),
+            Rect(tip.x - radius, tip.y - radius, tip.x + radius, tip.y + radius),
+            Math.toDegrees((-(head - half)).toDouble()).toFloat(),
+            Math.toDegrees((-2f * half).toDouble()).toFloat(),
             false
         )
         close()
     }
-    drawPath(wedge, SmColors.accent.copy(alpha = 0.10f))
-    drawPath(wedge, SmColors.accent.copy(alpha = 0.55f), style = Stroke(1.dp.toPx()))
+    val fade = Brush.radialGradient(
+        0f to SmColors.accent.copy(alpha = 0.42f),
+        0.45f to SmColors.accent.copy(alpha = 0.18f),
+        1f to Color.Transparent,
+        center = tip,
+        radius = radius
+    )
+    drawPath(wedge, fade)
     val pointer = Path().apply {
-        val tip = pt(head, 64f)
         val spread = 0.45f
-        val l = pt(head + spread, 36f)
-        val r = pt(head - spread, 36f)
+        val l = pt(origin, head + spread, MARKER_BASE_PX)
+        val r = pt(origin, head - spread, MARKER_BASE_PX)
         moveTo(tip.x, tip.y)
         lineTo(l.x, l.y)
         lineTo(r.x, r.y)
@@ -268,7 +279,7 @@ private fun DrawScope.drawNodes(
     shimmerAlpha: Float
 ) {
     val style = state.nodeStyle
-    val activeId = state.run?.let { it.ids.getOrNull(it.index) }
+    val activeId = state.run?.currentId
     state.nodes.forEach { n ->
         val p = state.worldToScreen(n.x, n.y)
         val vis = state.inView(n)
