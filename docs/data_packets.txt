@@ -1,45 +1,81 @@
+Field sketch of docs/FRONTEND_PROTOCOL.md. That file is the tablet copy of CCU/docs/CMD_PROTOCOL.md. Strings are a u8 count (max 32) plus UTF-8 bytes.
+
 DEVICE -> FRONTEND
-ON SUCCESSFUL CONNECTION
-- firmwareVersion
 
-REGULAR TELEMETRY
-- healthOK
-- effectiveYaw (from known pose + currentRotation)
-- moved (IMU Latch -- uses lastKnownPose + currentRotation to identify base swivel from other movement using IMU data)
-- lastKnownPose(Pose pose)
-- connectionStatus(ConnectionStatus status)
-- originIsSet
+DEVICE_ID 0x01
+Heartbeat while disconnected. Promo build: 2 Hz.
+- deviceId string          promo: "sm-ccu"
+- displayName string       promo: "Smart Marker"
+- sessionActive bool
+- sessionId string         empty when no session is active
 
-- isSurveying
-- surveyReady
+PAIRING_ACCEPTED 0x02
+- deviceId string
 
-- isProjecting
-- projectionMode
-- laserOn
-- laserPower
+REGULAR_TELEMETRY 0x03
+10 Hz while a session exists.
+- deviceId string
+- sessionId string
+- originIsSet bool
+- lastKnownPose Pose       24 bytes, metres. Promo build: (0, 0, DEVICE_HEIGHT, 0, 0, 0).
+- effectiveYaw f32         promo: clockwise from due north
+- moved bool               promo: 0
+- originSetStatus u8       promo: IDLE 0
+- tagFindingStatus u8      promo: POSE_KNOWN 0
+- surveyStatus u8
+- projectorStatus u8
+- projectorRunning bool
+- laserOn bool
+- laserPower u8            15-99. Promo default 30.
 
+SURVEY_RESULT 0x04
+26 bytes. One frame per node. Last frame has surveyFinished set.
+- id u16
+- east_m f32
+- north_m f32
+- up_m f32                 plan up, metres. 0 on failure
+- corner_inner_angle_rad f32
+- corner_orientation_rad f32
+- surveyed bool
+- success bool
+- errorCode u8             SurveyError
+- surveyFinished bool
 
-UPON EACH SURVEY POINT
-- nodeID
-- success
-- pose (measured if success)
-
-
-UPON PROJECTION START
-- projectedNodes(Node projectedNodes[i])
+PROJECTION_READY 0x05
+Once, before the first projected point.
+- count u16
+- PlanNode[count]          18 bytes each
+- errorCount u8
+- { id u16, errorCode u8 }[errorCount]
 
 
 TABLET -> DEVICE
-CMDS
-- setLaserPower(int duty)
-- setProjectionMode(int mode)
-- beginTagSearch   (Pose: begin Tag Finding; origin not required)
-- beginSurvey(int nodeIDs[i])
-- beginProjection(int nodeIDs[i])
-- tagFound(int tagID)   (two distinct ids → poseValid + originIsSet)
-- nudgeBeamX(float dx)
-- nudgeBeamY(float dy)
-- setOrigin(Pose origin)   (optional force-pose; not the Pose screen CTA)
 
-ON CONNECTION / NEW PLAN SELECTION
-- registerNodes(Node planNodes[N])
+CONNECTED 0x10
+10 Hz while REGULAR_TELEMETRY for this session is fresher than 5 s.
+- tabletId string          promo: "pad"
+
+BEGIN_NEW_SESSION 0x20     empty
+JOIN_SESSION 0x21          sessionId string
+END_SESSION 0x22           sessionId string
+BEGIN_ORIGIN_SET 0x23      empty. Promo: one press, no tag walk.
+BEGIN_TAG_FINDING 0x24     empty. Promo build drops this.
+PERFORM_SURVEY 0x25        count u16, then PlanNode[count]
+ABORT_SURVEY 0x26          empty
+PERFORM_PROJECTION 0x27    count u16, then PlanNode[count]
+PROJECTOR_PAUSE 0x28       empty
+PROJECTOR_PLAY 0x29        empty
+PROJECTION_END 0x2A        empty
+SET_LASER_POWER 0x2B       duty u8, 15-99. Outside that, the frame is dropped.
+NUDGE_X 0x2C               dx i16 DAC counts. Promo UI does not send this.
+NUDGE_Y 0x2D               dy i16 DAC counts.
+TAG_ALIGNED 0x2E           tagId string. Promo build drops this.
+
+There is no REGISTER_NODES and no FIRMWARE_VERSION.
+Vertices travel inside PERFORM_SURVEY and PERFORM_PROJECTION.
+
+PlanNode (18 bytes): id u16, east_m, north_m, corner_inner_angle_rad, corner_orientation_rad.
+Pose (24 bytes): east_m, north_m, up_m, roll_rad, pitch_rad, yaw_rad. Cartesian fields are metres.
+
+SurveyError: 0 NONE, 1 NOT_VISIBLE, 2 OUT_OF_FOV, 3 ABORTED.
+ProjectionError: 2 OUT_OF_FOV, 4 NOT_SURVEYED.

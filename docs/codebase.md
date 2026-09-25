@@ -2,7 +2,7 @@
 
 This is the Android tablet app for the Smart Marker. It is a Kotlin + Jetpack Compose application aimed at a OnePlus Pad Go (landscape). The operator loads a site plan, positions the marker, then surveys and projects vertices onto the floor.
 
-The UI was ported from the Industry-themed mock in `UI/`. Product intent lives in `docs/project_overview`. The USB/NOW wire spec lives in `docs/protocol.md` (field sketch: `docs/data_packets.txt`).
+The UI was ported from the Industry-themed mock in `UI/`. Product intent lives in `docs/project_overview`. The wire codec is `docs/FRONTEND_PROTOCOL.md`, the tablet copy of the CCU catalog `docs/CMD_PROTOCOL.md`. The field sketch is `docs/data_packets.txt`.
 
 ---
 
@@ -58,8 +58,9 @@ Design inputs (not compiled into the APK):
 | `UI/Smart Marker.dc.html` | Interactive mock this app was ported from |
 | `UI/industry.css` | Colour, type, and blueprint tokens |
 | `docs/project_overview` | Product / stack notes |
-| `docs/protocol.md` | Tablet ↔ device framing, cmd bytes, state machine (for firmware) |
-| `docs/data_packets.txt` | Field-list sketch the protocol implements |
+| `docs/FRONTEND_PROTOCOL.md` | Tablet copy of the CCU command catalog (framing, cmd bytes, payloads) |
+| `docs/data_packets.txt` | Field-list sketch of that catalog |
+| `docs/WIFI_DONGLE_HOSTING.md` | USB-C ESP-NOW hop, same text as the CCU copy |
 
 ---
 
@@ -99,7 +100,7 @@ Each row is a behaviour. “Governs” means: change that file first. The ViewMo
 | Default Riverside Plot 14 geometry + V01–V12 | `data/DemoPlan.kt` | Loaded by ViewModel `initialState()` |
 | Node status colours and FOV math | `data/Models.kt` (`NodeStatus`, `inMarkerView`, `SmartMarkerState`) | `PlanCanvas.kt`, `PlanScreen.kt` |
 
-World units are millimetres (x = east, y = north). Screen position is `pan.x + east * scale`, `pan.y - north * scale` so +east is right and +north is up (`SmartMarkerState.worldToScreen`).
+World units are metres (x = east, y = north). Screen position is `pan.x + east * scale`, `pan.y - north * scale` so +east is right and +north is up (`SmartMarkerState.worldToScreen`). The settings choice of mm, m, or ft changes only `formatCoord` on the plan card.
 
 ### Plans and DXF import
 
@@ -135,7 +136,7 @@ Heading used by the FOV wedge is `SmartMarkerState.headingRad` (telemetry `effec
 | Subroutine | Governs | Also involved |
 | --- | --- | --- |
 | Settings layout (units, laser, connection, about) | `ui/screens/SettingsScreen.kt` | `Widgets.kt` `SegButton`, `PillToggle` |
-| Coordinate units (mm / m / ft) | ViewModel `setUnits` | `Models.kt` `formatCoord` (detail card on Plan) |
+| Plan display units (mm / m / ft) | ViewModel `setUnits` | `Models.kt` `formatCoord` (detail card on Plan). Stored coordinates stay metres. |
 | Laser brightness slider | ViewModel `setBeam` | `TabletCommand.SetLaserPower` |
 | Auto-reconnect pill | ViewModel `toggleAutoReconnect` | Preferences |
 | Disconnect / reconnect | ViewModel `toggleLink` | Same as the header connection dialog |
@@ -145,7 +146,7 @@ Heading used by the FOV wedge is `SmartMarkerState.headingRad` (telemetry `effec
 
 | Subroutine | Governs | Also involved |
 | --- | --- | --- |
-| Packet shapes (telemetry in, commands out) | `data/DeviceProtocol.kt` | Spec: `docs/protocol.md` |
+| Packet shapes (telemetry in, commands out) | `data/DeviceProtocol.kt` | Spec: `docs/FRONTEND_PROTOCOL.md` |
 | USB host device list / VID match | `device/UsbDongleManager.kt` | `res/xml/usb_device_filter.xml` |
 | Attach intent on the activity | `AndroidManifest.xml` | Filter lists Silicon Labs, CH340, FTDI, Espressif, Prolific |
 | Command send hook | `UsbDongleManager.send` | Called from the ViewModel on survey, project, nudge, tag search, register-nodes, laser |
@@ -203,7 +204,7 @@ Open the project in Android Studio, select the Pad Go, Run. USB debugging must b
 
 ## Not wired yet
 
-1. **Serial protocol on the dongle** — `UsbDongleManager.send` is a no-op beyond detection. Fill this in against `DeviceProtocol` / `docs/protocol.md`.
+1. **Serial protocol on the dongle** — `UsbDongleManager.send` is a no-op beyond detection. Fill this in against `DeviceProtocol` / `docs/FRONTEND_PROTOCOL.md`.
 2. **Chaquopy + ezdxf** — documented as the long-term DXF stack; the running importer is `DxfParser`.
 3. **Real user / site accounts** — header user is the mock profile (`D. Whitfield`). Switch site / sign out are placeholders.
 4. **Firmware update check** — button exists on Settings, no backend.

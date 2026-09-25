@@ -11,12 +11,11 @@ import java.net.SocketTimeoutException
  * the tablet's localhost socket across USB. No Wi-Fi, no ESP-NOW hop.
  */
 class AdbDebugStream(
-    private val socket: Socket
+    private val socket: Socket,
+    override val name: String
 ) : DeviceStream {
     private val input = socket.getInputStream()
     private val output = socket.getOutputStream()
-
-    override val name: String = "adb"
 
     override fun read(buffer: ByteArray): Int {
         return try {
@@ -42,13 +41,14 @@ class AdbDebugStream(
         fun connect(
             host: String = DeviceLinkConfig.ADB_HOST,
             port: Int = DeviceLinkConfig.ADB_PORT,
-            connectTimeoutMs: Int = 1500
+            connectTimeoutMs: Int = 1500,
+            streamName: String = "adb"
         ): AdbDebugStream {
             val socket = Socket()
             socket.tcpNoDelay = true
             socket.soTimeout = 400
             socket.connect(InetSocketAddress(host, port), connectTimeoutMs)
-            return AdbDebugStream(socket)
+            return AdbDebugStream(socket, streamName)
         }
     }
 }

@@ -31,16 +31,15 @@ import kotlinx.coroutines.withContext
 /**
  * Owns the live byte pipe and [SerialFrameParser].
  *
- * Prefers a plugged-in ESP32-C3 CDC dongle (VID `303A` / PID `1001`,
- * docs/WIFI_DONGLE_HOSTING.md). If none is present, falls back to the USB-C
- * debugging cable via ADB reverse to localhost:[DeviceLinkConfig.ADB_PORT].
+ * The tablet joins the same phone hotspot as the Pi, finds it with
+ * [WifiBeacon], and opens a TCP socket on [DeviceLinkConfig.WIFI_PORT].
  */
 class UsbDongleManager(
     private val app: Application,
     private val scope: CoroutineScope
 ) {
     private val usb = app.getSystemService(Context.USB_SERVICE) as UsbManager
-    private val parser = SerialFrameParser()
+    private val link = HostDongleLink()
     private val writeLock = Any()
 
     private val _attached = MutableStateFlow(hasDongle())
@@ -63,6 +62,7 @@ class UsbDongleManager(
 
     @Volatile private var wantSession = false
     @Volatile private var stream: DeviceStream? = null
+    @Volatile private var wifiHost: String? = null
     private var loopJob: Job? = null
     private var receiverRegistered = false
 
@@ -131,11 +131,12 @@ class UsbDongleManager(
                 continue
             }
             stream = pipe
-            parser.reset()
+            link.reset()
             _transport.value = pipe.name
             _connected.value = true
             Log.i(TAG, "session up (${pipe.name})")
             try {
+                if (pipe.name != "wifi") pipe.writeFully(link.openingFrame())
                 readLoop(pipe)
             } catch (t: Throwable) {
                 Log.w(TAG, "session dropped (${pipe.name})", t)
@@ -161,25 +162,36 @@ class UsbDongleManager(
             val n = pipe.read(buf)
             if (n < 0) break
             if (n == 0) continue
-            val frames = synchronized(parser) { parser.feed(buf, 0, n) }
+            val frames = synchronized(link) { link.feed(buf, 0, n) }
             frames.forEach { _telemetry.tryEmit(it) }
         }
     }
 
-    private fun openPreferredStream(): DeviceStream? {
-        val dongle = findDongle()
-        if (dongle != null) {
-            if (!usb.hasPermission(dongle)) {
-                requestPermission(dongle)
-            } else {
-                return runCatching { UsbHostStream.open(usb, dongle) }
-                    .onFailure { Log.w(TAG, "USB host open failed", it) }
-                    .getOrNull()
+    private fun openWifi(host: String): DeviceStream? {
+        return runCatching {
+            AdbDebugStream.connect(
+                host = host,
+                port = DeviceLinkConfig.WIFI_PORT,
+                streamName = "wifi"
+            )
+        }.onSuccess { wifiHost = host }
+            .onFailure {
+                Log.i(TAG, "wifi $host not up")
+                wifiHost = null
             }
-        }
-        return runCatching { AdbDebugStream.connect() }
-            .onFailure { /* applet not listening yet */ }
             .getOrNull()
+    }
+
+    private fun openPreferredStream(): DeviceStream? {
+        wifiHost?.let { cached ->
+            openWifi(cached)?.let { return it }
+        }
+        val found = WifiBeacon.find()
+        if (found == null) {
+            Log.i(TAG, "wifi beacon: no marker")
+            return null
+        }
+        return openWifi(found)
     }
 
     private fun usbDongleReady(): Boolean {

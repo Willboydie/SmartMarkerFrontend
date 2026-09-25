@@ -1,188 +1,161 @@
 package com.example.smartmarkerfrontend.device
 
-import com.example.smartmarkerfrontend.data.Pose
-import com.example.smartmarkerfrontend.data.TabletCommand
+import com.example.smartmarkerfrontend.data.DeviceTelemetry
+import com.example.smartmarkerfrontend.data.SurveyError
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 class SerialFrameParserTest {
     @Test
-    fun firmwareVersion_matchesProtocolExample() {
-        val payload = byteArrayOf(0x01) + "1.4.2".encodeToByteArray()
-        val frame = byteArrayOf(0x01, 0x06, 0x00) + payload
-        val parsed = SerialFrameParser().feed(frame)
-        assertEquals(1, parsed.size)
-        val hs = parsed[0] as com.example.smartmarkerfrontend.data.DeviceTelemetry.Handshake
-        assertEquals("1.4.2", hs.firmwareVersion)
+    fun deviceId_matchesG1Fixture() {
+        assertEquals(33, PromoFrames.deviceId.size)
+        val msg = SerialFrameParser().feed(PromoFrames.deviceId).single() as DeviceTelemetry.DeviceId
+        assertEquals("sm-ccu", msg.deviceId)
+        assertEquals("Smart Marker", msg.displayName)
+        assertTrue(msg.sessionActive)
+        assertEquals("abcd1234", msg.sessionId)
     }
 
     @Test
-    fun telemetry_40BytePayload() {
-        val payload = ByteBuffer.allocate(40).order(ByteOrder.LITTLE_ENDIAN).apply {
-            put(1) // health
-            put(0) // moved
-            put(1) // origin
-            put(0); put(1); put(0); put(0) // surveying, surveyReady, projecting, laser
-            put(0) // Linked
-            put(0) // Off
-            put(80) // duty
-            put(1) // poseValid
-            put(0) // reserved
-            putFloat(1.5f)
-            putFloat(100f); putFloat(200f); putFloat(30f)
-            putFloat(0.1f); putFloat(0.2f); putFloat(1.5f)
-        }.array()
-        val frame = TabletFrameEncoder.frame(SerialFrameParser.CMD_TELEMETRY, payload)
-        val parsed = SerialFrameParser().feed(frame)
-        val telem = parsed[0] as com.example.smartmarkerfrontend.data.DeviceTelemetry.Regular
-        assertTrue(telem.healthOk)
-        assertTrue(telem.originIsSet)
-        assertTrue(telem.surveyReady)
-        assertEquals(80, telem.laserPower)
-        assertEquals(100f, telem.lastKnownPose?.eastMm)
-        assertEquals(1.5f, telem.effectiveYaw)
+    fun deviceId_nonZeroBoolIsTrue() {
+        val msg = SerialFrameParser().feed(PromoFrames.deviceIdLooseBool).single() as DeviceTelemetry.DeviceId
+        assertTrue(msg.sessionActive)
+        assertEquals("", msg.deviceId)
+        assertEquals("", msg.sessionId)
     }
 
     @Test
-    fun splitReads_stillParse() {
-        val frame = TabletFrameEncoder.encode(TabletCommand.SetLaserPower(40))
-        // Parser only emits device→tablet frames; encode a handshake and split it.
-        val hs = byteArrayOf(0x01, 0x06, 0x00, 0x01) + "1.4.2".encodeToByteArray()
+    fun pairingAccepted_matchesG1Fixture() {
+        val msg = SerialFrameParser().feed(PromoFrames.pairingAccepted).single() as DeviceTelemetry.PairingAccepted
+        assertEquals("sm-ccu", msg.deviceId)
+    }
+
+    @Test
+    fun telemetry_matchesG1Fixture() {
+        assertEquals(56, PromoFrames.telemetry.size)
+        val msg = SerialFrameParser().feed(PromoFrames.telemetry).single() as DeviceTelemetry.Regular
+        assertEquals("sm-ccu", msg.deviceId)
+        assertEquals("abcd1234", msg.sessionId)
+        assertTrue(msg.originIsSet)
+        assertEquals(1f, msg.pose.eastM, 0f)
+        assertEquals(2f, msg.pose.northM, 0f)
+        assertEquals(3f, msg.pose.upM, 0f)
+        assertEquals(4f, msg.pose.rollRad, 0f)
+        assertEquals(5f, msg.pose.pitchRad, 0f)
+        assertEquals(6f, msg.pose.yawRad, 0f)
+        assertEquals(0.5f, msg.effectiveYaw, 0f)
+        assertTrue(msg.moved)
+        assertEquals(0, msg.originSetStatus)
+        assertEquals(0, msg.tagFindingStatus)
+        assertEquals(1, msg.surveyStatus)
+        assertEquals(2, msg.projectorStatus)
+        assertTrue(msg.projectorRunning)
+        assertFalse(msg.laserOn)
+        assertEquals(30, msg.laserPower)
+    }
+
+    @Test
+    fun telemetry_laserPowerIsNotRangeChecked() {
+        val frame = PromoFrames.telemetry.copyOf()
+        frame[frame.size - 1] = 100
+        val msg = SerialFrameParser().feed(frame).single() as DeviceTelemetry.Regular
+        assertEquals(100, msg.laserPower)
+    }
+
+    @Test
+    fun surveyResult_matchesG1Fixtures() {
+        assertEquals(3 + 26, PromoFrames.surveyOk.size)
+        val ok = SerialFrameParser().feed(PromoFrames.surveyOk).single() as DeviceTelemetry.SurveyResult
+        assertEquals(1, ok.id)
+        assertEquals(3f, ok.upM, 0f)
+        assertTrue(ok.surveyed && ok.success && ok.surveyFinished)
+        assertEquals(SurveyError.NONE, ok.errorCode)
+
+        val failed = SerialFrameParser().feed(PromoFrames.surveyFailed).single() as DeviceTelemetry.SurveyResult
+        assertEquals(7, failed.id)
+        assertEquals(0f, failed.upM, 0f)
+        assertFalse(failed.surveyed || failed.success || failed.surveyFinished)
+        assertEquals(SurveyError.OUT_OF_FOV, failed.errorCode)
+    }
+
+    @Test
+    fun surveyResult_wrongLengthDropped() {
+        val shortFrame = PromoFrames.surveyOk.copyOf(PromoFrames.surveyOk.size - 1)
+        shortFrame[1] = (shortFrame.size - 3).toByte()
         val parser = SerialFrameParser()
-        assertTrue(parser.feed(hs.copyOfRange(0, 2)).isEmpty())
-        assertTrue(parser.feed(hs.copyOfRange(2, 5)).isEmpty())
-        val got = parser.feed(hs.copyOfRange(5, hs.size))
-        assertEquals(1, got.size)
-        assertEquals("1.4.2", (got[0] as com.example.smartmarkerfrontend.data.DeviceTelemetry.Handshake).firmwareVersion)
-        assertEquals(0x10.toByte(), frame[0])
-        assertEquals(40, frame[3].toInt() and 0xFF)
-    }
-
-    @Test
-    fun unknownCmd_isDroppedUntilNextDeviceFrame() {
-        val hs = byteArrayOf(0x01, 0x03, 0x00, 0x01) + "ok".encodeToByteArray()
-        val junk = byteArrayOf(0x99.toByte(), 0x00, 0x00) + hs
-        val parser = SerialFrameParser()
-        val got = parser.feed(junk)
-        assertEquals(1, got.size)
+        assertTrue(parser.feed(shortFrame).isEmpty())
         assertTrue(parser.droppedBytes > 0)
+
+        val longFrame = PromoFrames.surveyOk + byteArrayOf(0)
+        longFrame[1] = (26 + 1).toByte()
+        assertTrue(SerialFrameParser().feed(longFrame).isEmpty())
     }
 
     @Test
-    fun setOrigin_encodes24BytePose() {
-        val pose = Pose(0f, 0f, 0f, 0f, 0f, 1.2f)
-        val frame = TabletFrameEncoder.encode(TabletCommand.SetOrigin(pose))
-        assertEquals(SerialFrameParser.CMD_SET_ORIGIN.toByte(), frame[0])
-        assertEquals(24, frame[1].toInt() and 0xFF)
-        val yaw = ByteBuffer.wrap(frame, 3 + 20, 4).order(ByteOrder.LITTLE_ENDIAN).float
-        assertEquals(1.2f, yaw, 1e-5f)
+    fun projectionReady_matchesG1Fixtures() {
+        assertEquals(27, PromoFrames.projectionReady.size)
+        val msg = SerialFrameParser().feed(PromoFrames.projectionReady).single() as DeviceTelemetry.ProjectionReady
+        assertEquals(1, msg.nodes.size)
+        assertEquals("V01", msg.nodes[0].id)
+        assertEquals(1f, msg.nodes[0].eastM, 0f)
+        assertEquals(2f, msg.nodes[0].northM, 0f)
+        assertEquals(0.5f, msg.nodes[0].cornerInnerAngleRad, 0f)
+        assertEquals(0f, msg.nodes[0].cornerOrientationRad, 0f)
+        assertEquals(1, msg.errors.size)
+        assertEquals(2, msg.errors[0].id)
+        assertEquals(4, msg.errors[0].errorCode)
+
+        val empty = SerialFrameParser().feed(PromoFrames.projectionReadyEmpty).single() as DeviceTelemetry.ProjectionReady
+        assertTrue(empty.nodes.isEmpty() && empty.errors.isEmpty())
     }
 
     @Test
-    fun registerNodes_mapsVLabelsToU16() {
-        assertEquals(1, NodeIds.toWire("V01"))
-        assertEquals(12, NodeIds.toWire("V12"))
-        assertEquals("V07", NodeIds.fromWire(7))
-        val node = com.example.smartmarkerfrontend.data.NodePacket("V03", 10f, 20f, 1.5f, 0.2f)
-        val frame = TabletFrameEncoder.encode(TabletCommand.RegisterNodes(listOf(node)))
-        assertEquals(SerialFrameParser.CMD_REGISTER_NODES.toByte(), frame[0])
-        val id = ByteBuffer.wrap(frame, 5, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xFFFF
-        assertEquals(3, id)
-    }
-
-    @Test
-    fun surveyPoint_27BytePayload() {
-        val payload = ByteBuffer.allocate(27).order(ByteOrder.LITTLE_ENDIAN).apply {
-            putShort(3)
-            put(1) // success
-            putFloat(10f); putFloat(20f); putFloat(0f)
-            putFloat(0f); putFloat(0f); putFloat(1.2f)
-        }.array()
-        val frame = TabletFrameEncoder.frame(SerialFrameParser.CMD_SURVEY_POINT, payload)
-        val parsed = SerialFrameParser().feed(frame)
-        val point = parsed[0] as com.example.smartmarkerfrontend.data.DeviceTelemetry.SurveyPoint
-        assertEquals("V03", point.nodeId)
-        assertTrue(point.success)
-        assertEquals(10f, point.pose.eastMm)
-        assertEquals(20f, point.pose.northMm)
-    }
-
-    @Test
-    fun beginSurvey_idList() {
-        val frame = TabletFrameEncoder.encode(TabletCommand.BeginSurvey(listOf("V01", "V02")))
-        assertEquals(SerialFrameParser.CMD_BEGIN_SURVEY.toByte(), frame[0])
-        val buf = ByteBuffer.wrap(frame, 3, frame.size - 3).order(ByteOrder.LITTLE_ENDIAN)
-        assertEquals(2, buf.short.toInt())
-        assertEquals(1, buf.short.toInt())
-        assertEquals(2, buf.short.toInt())
-    }
-
-    @Test
-    fun wrongTelemetryLength_isDropped() {
-        val frame = TabletFrameEncoder.frame(SerialFrameParser.CMD_TELEMETRY, byteArrayOf(1, 2, 3))
-        val parsed = SerialFrameParser().feed(frame)
-        assertTrue(parsed.isEmpty())
-    }
-
-    @Test
-    fun protocolVersionNot1_isDropped() {
-        val frame = byteArrayOf(0x01, 0x02, 0x00, 0x02, 'x'.code.toByte())
+    fun overlongString_isDropped() {
+        val payload = ByteArray(1 + 1 + 33 + 1 + 1)
+        payload[0] = 0
+        payload[1] = 33
+        payload.fill('x'.code.toByte(), 2, 35)
+        payload[35] = 1
+        payload[36] = 0
+        val frame = byteArrayOf(0x01, payload.size.toByte(), 0x00) + payload
         assertTrue(SerialFrameParser().feed(frame).isEmpty())
     }
 
     @Test
-    fun nudgeEncodesLittleEndianFloat() {
-        val frame = TabletFrameEncoder.encode(TabletCommand.NudgeBeamX(0.5f))
-        assertEquals(SerialFrameParser.CMD_NUDGE_BEAM_X.toByte(), frame[0])
-        val dx = ByteBuffer.wrap(frame, 3, 4).order(ByteOrder.LITTLE_ENDIAN).float
-        assertEquals(0.5f, dx, 1e-6f)
-        assertNull(SerialFrameParser.decode(frame[0].toInt() and 0xFF, frame.copyOfRange(3, frame.size)))
+    fun stringPastPayload_andTrailingByte_areDropped() {
+        val overrun = promoBytes(0x01, 0x04, 0x00, 0x0A, "abc")
+        assertTrue(SerialFrameParser().feed(overrun).isEmpty())
+        val trailing = PromoFrames.pairingAccepted + byteArrayOf(0)
+        trailing[1] = (PromoFrames.pairingAccepted.size - 3 + 1).toByte()
+        assertTrue(SerialFrameParser().feed(trailing).isEmpty())
     }
 
     @Test
-    fun pairingFrame_isSkippedWhole_soPayloadDoesNotLookLikeCommands() {
-        val handshake = byteArrayOf(0x01, 0x03, 0x00, 0x01) + "ok".encodeToByteArray()
-        // 0x10 would be SET_LASER_POWER if the pairing payload were parsed as cmds.
-        val pairing = byteArrayOf(
-            DeviceLinkConfig.PAIRING_CMD.toByte(),
-            0x04, 0x00,
-            0x10, 0x01, 0x02, 0x03
-        )
+    fun reservedAndUnknown_areConsumedWhole() {
+        val pairing = promoBytes(0xE5, 0x04, 0x00, 0x01, 0x00, 0x00, 0x10)
         val parser = SerialFrameParser()
-        val got = parser.feed(pairing + handshake)
+        val got = parser.feed(pairing + PromoFrames.deviceId)
         assertEquals(1, got.size)
-        val hs = got[0] as com.example.smartmarkerfrontend.data.DeviceTelemetry.Handshake
-        assertEquals("ok", hs.firmwareVersion)
+        assertEquals("sm-ccu", (got[0] as DeviceTelemetry.DeviceId).deviceId)
         assertEquals(pairing.size, parser.droppedBytes)
+
+        val unknown = SerialFrameParser()
+        val afterUnknown = unknown.feed(promoBytes(0xE4, 0x00, 0x00, 0xE6, 0x00, 0x00, 0x06, 0x00, 0x00) + PromoFrames.pairingAccepted)
+        assertEquals(1, afterUnknown.size)
+        assertEquals(9, unknown.droppedBytes)
     }
 
     @Test
-    fun zeroLengthPayload_isConsumed() {
-        val frame = byteArrayOf(0x02, 0x00, 0x00) // TELEMETRY, len=0 → decode drops
+    fun splitReads_stillParse() {
+        val frame = PromoFrames.deviceId
         val parser = SerialFrameParser()
-        assertTrue(parser.feed(frame).isEmpty())
+        assertTrue(parser.feed(frame.copyOfRange(0, 2)).isEmpty())
         assertEquals(0, parser.droppedBytes)
-        val hs = byteArrayOf(0x01, 0x03, 0x00, 0x01) + "ok".encodeToByteArray()
-        assertEquals(1, parser.feed(hs).size)
-    }
-
-    @Test
-    fun encoderRejectsPairingCmdAndOversize() {
-        try {
-            TabletFrameEncoder.frame(DeviceLinkConfig.PAIRING_CMD, byteArrayOf())
-            throw AssertionError("expected pairing cmd to be rejected")
-        } catch (_: IllegalArgumentException) {
-        }
-        val huge = ByteArray(DeviceLinkConfig.MAX_PAYLOAD + 1)
-        try {
-            TabletFrameEncoder.frame(SerialFrameParser.CMD_TELEMETRY, huge)
-            throw AssertionError("expected oversize frame to be rejected")
-        } catch (_: IllegalArgumentException) {
-        }
+        val got = parser.feed(frame.copyOfRange(2, frame.size))
+        assertEquals(1, got.size)
+        assertEquals("Smart Marker", (got[0] as DeviceTelemetry.DeviceId).displayName)
     }
 
     @Test
@@ -197,7 +170,7 @@ class SerialFrameParserTest {
         assertEquals(0, coding[4].toInt())
         assertEquals(0, coding[5].toInt())
         assertEquals(8, coding[6].toInt())
-        assertEquals(0, DeviceLinkConfig.CDC_LINE_STATE_IDLE)
+        assertEquals(1, DeviceLinkConfig.CDC_LINE_STATE_DTR)
         assertEquals(0xE5, DeviceLinkConfig.PAIRING_CMD)
         assertEquals(0x303A, DeviceLinkConfig.ESPRESSIF_VID)
         assertEquals(0x1001, DeviceLinkConfig.ESPRESSIF_PID)

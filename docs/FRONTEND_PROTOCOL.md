@@ -1,622 +1,434 @@
-# Smart Marker — tablet ↔ device protocol
+# CCU ↔ frontend command protocol
 
-This is the wire contract between the **Android tablet app** and **marker firmware**, forwarded by the USB-C ESP-NOW dongle. It is written for the firmware author. The tablet’s Kotlin types live in `app/.../data/DeviceProtocol.kt`. The field list this spec implements is `docs/data_packets.txt`.
+Tablet copy of the CCU catalog `CCU/docs/CMD_PROTOCOL.md`. The bytes below are the same document.
 
-Peak throughput on the USB-C hop is about **10 KB/s**. ESP-NOW payloads are at most **250 bytes**. Keep every frame at or under 250 bytes including the header, unless the dongle fragments and reassembles logical frames transparently.
+Shared command-byte catalog for the CCU and the frontend. Every packet and command on this link uses a unique `cmd` byte. Each payload section below is the byte layout.
 
-Protocol version: **1**.
+Related: [POC_WORKFLOW.md](../../CCU/docs/POC_WORKFLOW.md) (session / connection flow, including the promo build), [MACRO_ROUTINES.md](../../CCU/docs/MACRO_ROUTINES.md) (work routines, including the promo build), [WIFI_DONGLE_HOSTING.md](WIFI_DONGLE_HOSTING.md) (USB-C ESP-NOW hop).
+
+**Never send `0xE4`, `0xE5`, or `0xE6`.** The dongle consumes those locally (`DONGLE_RESET`, chip-to-chip pairing, `DONGLE_STATUS`).
 
 ---
 
+## Frame format
 
-
-## 1. Frame format
-
-Every message is one frame. Little-endian. No checksum (USB is reliable; the dongle must retry ESP-NOW).
+Every message is one frame. Little-endian.
 
 ```
  offset  size  field
- 0       1     cmd
- 1       2     length     uint16 — payload byte count (not including this header)
+ 0       1     cmd        u8    identity of this packet / command (this document)
+ 1       2     length     u16   payload byte count (not including this header)
  3       N     payload    N = length
 ```
 
-Total size = `3 + length`. Parser: read 3 bytes, then read `length` bytes. One USB write / one ESP-NOW datagram should contain exactly one frame. On an unknown `cmd` or a `length` that does not match the payload layout, drop the frame and stay in the current state.
+Total size = `3 + length`. On an unknown `cmd`, drop the frame. On a payload whose bytes do not walk exactly to `length`, drop the frame.
 
 ### Primitive types
 
+Little-endian. Floats are IEEE-754 binary32.
 
-| Type   | Size | Encoding                                                    |
-| ------ | ---- | ----------------------------------------------------------- |
-| `u8`   | 1    | unsigned                                                    |
-| `u16`  | 2    | little-endian                                               |
-| `i16`  | 2    | little-endian, two’s complement                             |
-| `f32`  | 4    | IEEE-754 binary32, little-endian                            |
-| `bool` | 1    | `0` = false, `1` = true. Any non-zero value is true.        |
-| UTF-8  | N    | not NUL-terminated; size is `length` or an inner `u8` count |
+| Type | Size | Encoding |
+| --- | --- | --- |
+| `u8` / `bool` | 1 | Bool is `0` or `1`. Any non-zero byte is true on receive. |
+| `u16` | 2 | unsigned |
+| `i16` | 2 | two's complement |
+| `f32` | 4 | binary32 |
+| `string` | 1 + N | `u8` byte count, then that many UTF-8 bytes. Not NUL-terminated. A count above **32** drops the frame. |
 
+### Ranges
 
-
-
-### Shared structs
-
-**Pose** (24 bytes) — site millimetres and attitude. Every angle is radians in **[0, 2π)**.
-
-```
- offset  size  field
- 0       4     east_mm     f32
- 4       4     north_mm    f32
- 8       4     up_mm       f32
- 12      4     roll_rad    f32
- 16      4     pitch_rad   f32
- 20      4     yaw_rad     f32
-```
-
-`east_mm` / `north_mm` / `up_mm` are millimetres in the plan frame (same as DXF extraction). On the tablet, **+east is right** and **+north is up**. `yaw_rad` is heading clockwise from north (same convention as node orientation). Wrap each of `roll_rad`, `pitch_rad`, and `yaw_rad` into `[0, 2π)` before sending.
-
-**Node** (18 bytes) — a plan **vertex**. Firmware aims at these corners.
-
-```
- offset  size  field
- 0       2     id                         u16  tablet-assigned, stable for the loaded plan
- 2       4     east_mm                    f32
- 6       4     north_mm                   f32
- 10      4     corner_inner_angle_rad     f32
- 14      4     corner_orientation_rad     f32
-```
-
-The tablet maps labels such as `"V01"` to these integer ids. Firmware never sees the string.
-
-Both angles are radians in **[0, 2π)**.
-
-- `corner_inner_angle_rad` is the **acute** angle between the two walls that meet at the vertex (`≤ π/2`; a square corner is `π/2`). Never send the reflex / exterior.
-- `corner_orientation_rad` is measured **from north, clockwise, to the first hand** — the incident wall whose bearing clockwise from north is smaller.
-
-```
-        N
-        ↑
-        |  orientation
-        | /
-        |/  first hand
-        ●------ second hand
-         \
-          inner (acute)
-```
-
-The tablet computes both from the loaded plan when it sends `REGISTER_NODES`.
-
-### Enumerations
-
-**ConnectionStatus** (`u8`) — ESP-NOW link between dongle and marker, as the device reports it.
-
-
-| Value | Name        | Meaning                             |
-| ----- | ----------- | ----------------------------------- |
-| 0     | `Linked`    | Marker is reachable                 |
-| 1     | `Searching` | Dongle/marker is looking for a peer |
-| 2     | `Lost`      | Peer was up and is now gone         |
-
-
-**ProjectionMode** (`u8`) — how the laser is being used.
-
-
-| Value | Name     | Meaning                                        |
-| ----- | -------- | ---------------------------------------------- |
-| 0     | `Off`     | Beam idle (may still be dark at the last duty) |
-| 1     | `Survey`  | Capture returns on vertices                    |
-| 2     | `Project` | Hold / slew a visible projected beam           |
-
+| Range | Direction | Kind |
+| --- | --- | --- |
+| `0x01`–`0x0F` | device → frontend | packets |
+| `0x10`–`0x1F` | frontend → device | packets |
+| `0x20`–`0x3F` | frontend → device | commands |
+| `0xE5` | — | **reserved** (dongle pairing; not a protocol message) |
 
 ---
 
+## Command bytes (unique)
 
+### Device → frontend packets
 
-## 2. Command ids
+| cmd | Name | When |
+| --- | --- | --- |
+| `0x01` | `DEVICE_ID` | Heartbeat while disconnected |
+| `0x02` | `PAIRING_ACCEPTED` | Device accepted a join / begin-session request |
+| `0x03` | `REGULAR_TELEMETRY` | 10 Hz while In Session |
+| `0x04` | `SURVEY_RESULT` | Once per surveyed node (final frame has `surveyFinished = true`) |
+| `0x05` | `PROJECTION_READY` | Once when a projection is accepted, before the first point |
 
-Device → tablet: `0x01`–`0x0F`. Tablet → device: `0x10`–`0x1F`.
+### Frontend → device packets
 
+| cmd | Name | When |
+| --- | --- | --- |
+| `0x10` | `CONNECTED` | 10 Hz keep-alive while the UI considers itself connected |
 
-| cmd    | Name                  | Direction       | When                                          |
-| ------ | --------------------- | --------------- | --------------------------------------------- |
-| `0x01` | `FIRMWARE_VERSION`    | device → tablet | Once, on successful connection                |
-| `0x02` | `TELEMETRY`           | device → tablet | Periodic, while linked                        |
-| `0x03` | `SURVEY_POINT`        | device → tablet | Once per requested vertex during a survey     |
-| `0x04` | `PROJECTION_START`    | device → tablet | Once, when a projection job is accepted       |
-| `0x10` | `SET_LASER_POWER`     | tablet → device | Operator changes brightness                   |
-| `0x11` | `SET_PROJECTION_MODE` | tablet → device | Mode / halt                                   |
-| `0x12` | `BEGIN_TAG_SEARCH`    | tablet → device | Pose screen: begin Tag Finding (or the next tag) |
-| `0x13` | `BEGIN_SURVEY`        | tablet → device | Operator starts a survey of selected nodes    |
-| `0x14` | `BEGIN_PROJECTION`    | tablet → device | Operator starts projecting selected nodes     |
-| `0x15` | `TAG_FOUND`           | tablet → device | Operator confirms the current tag on the pad  |
-| `0x16` | `NUDGE_BEAM_X`        | tablet → device | D-pad azimuth step                            |
-| `0x17` | `NUDGE_BEAM_Y`        | tablet → device | D-pad elevation step                          |
-| `0x18` | `SET_ORIGIN`          | tablet → device | Optional: force origin / pose (not the Pose CTA) |
-| `0x19` | `REGISTER_NODES`      | tablet → device | Connection, or a new plan is opened           |
+### Frontend → device commands
 
-
-There are no command-ack packets. The tablet infers success or rejection from the next `TELEMETRY` (and from `SURVEY_POINT` / `PROJECTION_START` where those apply).
-
----
-
-
-
-## 3. Device program states
-
-Firmware keeps one **mode** plus a few **flags**. Telemetry reports the flags every tick; the tablet UI is driven from those flags.
-
-### Modes (mutually exclusive)
-
-
-| Mode         | `isSurveying` | `isProjecting` | Typical `laserOn` |
-| ------------ | ------------- | -------------- | ----------------- |
-| `UNLINKED`   | —             | —              | off, no frames    |
-| `IDLE`       | 0             | 0              | 0                 |
-| `TAG_SEARCH` | 0             | 0              | 1                 |
-| `SURVEYING`  | 1             | 0              | 0                 |
-| `PROJECTING` | 0             | 1              | 1                 |
-
-
-`UNLINKED` is “no tablet session”. As soon as the NOW/USB session is up, send `FIRMWARE_VERSION` and enter `IDLE` (even if origin is unset).
-
-### Flags (orthogonal, reported in telemetry)
-
-
-| Flag          | Set when                                                                                         | Cleared when                                                                                                               |
-| ------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| `healthOK`    | Self-test / IMU / laser driver are good                                                          | Fault                                                                                                                      |
-| `originIsSet` | `SET_ORIGIN` accepted                                                                            | Power loss. Tablet **Clear origin** is UI-only (no wire command) — stay set until reboot unless you add your own policy    |
-| `moved`       | IMU latch: the **base translated or tilted**, not a turret swivel                                | A completed tag pair that refreshes `lastKnownPose`, or `SET_ORIGIN`                                                       |
-| `surveyReady` | May accept `BEGIN_SURVEY` (see below)                                                            | Origin missing, `moved`, not `IDLE`, no nodes, `healthOK` false, or link not `Linked`                                      |
-| `poseValid`   | `lastKnownPose` is usable (completed tag pair, or `originIsSet`)                                 | `moved`                                                                                                                    |
-
-
-`surveyReady` is a derived bit. Compute it as:
-
-```
-healthOK
-&& originIsSet
-&& !moved
-&& poseValid
-&& nodesRegistered
-&& mode == IDLE
-&& connectionStatus == Linked
-```
-
-`effectiveYaw` is `lastKnownPose.yaw_rad` plus the IMU yaw delta since that pose was stored, wrapped to `[0, 2π)`. Turret / base **swivel** updates `effectiveYaw` and does **not** set `moved`. Physical relocation sets `moved` and invalidates pose.
-
-```
-                 link up
- UNLINKED ──────────────────► IDLE ── periodic TELEMETRY + FIRMWARE_VERSION once
-                                │
-                                │ BEGIN_TAG_SEARCH     (IDLE; origin not required)
-                                ├──────────────────► TAG_SEARCH
-                                │                         │
-                                │              TAG_FOUND / timeout
-                                │                         │
-                                ◄─────────────────────────┘
-                                │  two distinct tags → originIsSet, poseValid,
-                                │                      lastKnownPose, moved=0
-                                │
-         SET_ORIGIN             │ BEGIN_SURVEY          (requires surveyReady)
-         (optional)             ├──────────────────► SURVEYING
-              │                 │                         │
-              ▼                 │              SURVEY_POINT (each id)
-         originIsSet            │                         │
-         poseValid              ◄─────────────────────────┘
-         lastKnownPose          │
-                                │ BEGIN_PROJECTION
-                                ├──────────────────► PROJECTING
-                                │                         │
-                                │     SET_PROJECTION_MODE(Off)
-                                │     or job finished
-                                ◄─────────────────────────┘
-
- SET_PROJECTION_MODE(Off) from TAG_SEARCH / SURVEYING / PROJECTING returns to IDLE
- (survey: emit `SURVEY_POINT` with success=0 for any ids not yet reported).
- moved == true: abort SURVEYING / PROJECTING / TAG_SEARCH → IDLE, laser off.
- Forget locked tag IDs (`poseValid = 0`). The tablet sets every Tag.aligned = false
- and returns the Pose screen to “Click to begin Tag Finding”.
-```
-
-
-
-### What the device sends in each mode
-
-
-| Mode           | Device sends                                                          | Device expects from tablet                                                           |
-| -------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `UNLINKED`     | nothing                                                               | nothing                                                                              |
-| `IDLE`         | `TELEMETRY` at 10 Hz                                                  | any command in the accept table below                                                |
-| just connected | `FIRMWARE_VERSION` once, then `IDLE`                                  | `REGISTER_NODES`, then `SET_LASER_POWER` for the UI slider                           |
-| `TAG_SEARCH`   | `TELEMETRY` (`laserOn` = 1)                                           | `TAG_FOUND`, `NUDGE_BEAM_*`, `SET_LASER_POWER`, `SET_PROJECTION_MODE(Off)` to cancel |
-| `SURVEYING`    | `TELEMETRY` (`isSurveying` = 1), plus one `SURVEY_POINT` per requested id | `SET_PROJECTION_MODE(Off)` to cancel; ignore new jobs                                |
-| `PROJECTING`   | `PROJECTION_START` immediately, then `TELEMETRY` (`isProjecting` = 1) | `NUDGE_BEAM_*`, `SET_LASER_POWER`, `SET_PROJECTION_MODE(Off)` to halt                |
-
-
-
-
-### Command accept table
-
-
-| Command               | `IDLE`                       | `TAG_SEARCH`            | `SURVEYING` | `PROJECTING`            |
-| --------------------- | ---------------------------- | ----------------------- | ----------- | ----------------------- |
-| `SET_LASER_POWER`     | yes                          | yes                     | yes         | yes                     |
-| `SET_PROJECTION_MODE` | yes                          | Off cancels             | Off cancels | Off cancels             |
-| `BEGIN_TAG_SEARCH`    | yes                          | ignore                  | ignore      | ignore                  |
-| `BEGIN_SURVEY`        | if `surveyReady`             | ignore                  | ignore      | ignore                  |
-| `BEGIN_PROJECTION`    | if origin + nodes + `!moved` | ignore                  | ignore      | ignore (already in job) |
-| `TAG_FOUND`           | ignore                       | yes                     | ignore      | ignore                  |
-| `NUDGE_BEAM_X/Y`      | yes                          | yes                     | ignore      | yes                     |
-| `SET_ORIGIN`          | yes                          | cancel search, then set | ignore      | ignore                  |
-| `REGISTER_NODES`      | yes (replace table)          | ignore                  | ignore      | ignore                  |
-
-
-“Ignore” means: drop the frame, do not change mode, do not NACK. The tablet will see unchanged flags in `TELEMETRY`.
+| cmd | Name | When |
+| --- | --- | --- |
+| `0x20` | `BEGIN_NEW_SESSION` | Start a session on a recognised device |
+| `0x21` | `JOIN_SESSION` | Join an already Active session |
+| `0x22` | `END_SESSION` | End the named session; wipe session data |
+| `0x23` | `BEGIN_ORIGIN_SET` | Set origin. Promo build: one press, no tag walk. See the promo section in `CCU/docs/MACRO_ROUTINES.md`. |
+| `0x24` | `BEGIN_TAG_FINDING` | Enter relocation Tag Finding (`originIsSet` must be `true`) |
+| `0x25` | `PERFORM_SURVEY` | Survey the listed nodes |
+| `0x26` | `ABORT_SURVEY` | Cancel an in-progress survey |
+| `0x27` | `PERFORM_PROJECTION` | Project the listed nodes |
+| `0x28` | `PROJECTOR_PAUSE` | Pause an active projection |
+| `0x29` | `PROJECTOR_PLAY` | Resume a paused projection |
+| `0x2A` | `PROJECTION_END` | Discard the path and disable the projector |
+| `0x2B` | `SET_LASER_POWER` | Set laser PWM duty |
+| `0x2C` | `NUDGE_X` | Steer the beam (Origin Set / Tag Finding / projection) |
+| `0x2D` | `NUDGE_Y` | Steer the beam (Origin Set / Tag Finding / projection) |
+| `0x2E` | `TAG_ALIGNED` | Projector on the named tag; LiDAR ranges at the same pointing `Angle` (offset origin) |
 
 ---
 
+## Device → frontend
 
+### `0x01` `DEVICE_ID`
 
-## 4. Device → tablet
+Heartbeat while the device is disconnected. Stops when the device latches Connected. Promo build sends this at **2 Hz**.
 
+Bytes, in order: `deviceId` string, `displayName` string, `sessionActive` bool, `sessionId` string.
 
+| Field | Type | Notes |
+| --- | --- | --- |
+| `deviceId` | string | Stable device identity. Promo build: `"sm-ccu"`. |
+| `displayName` | string | UI label. Promo build: `"Smart Marker"`. |
+| `sessionActive` | bool | `true` if a session is already Active (UI may `JOIN_SESSION`) |
+| `sessionId` | string | Current session id. Empty while no session is active. Promo build: 8 hex characters when a session starts. |
 
-### `0x01` `FIRMWARE_VERSION`
+### `0x02` `PAIRING_ACCEPTED`
 
-**Time:** immediately after the session is up (USB enumerated **and** NOW linked, or as soon as the marker can talk to the dongle that is already on USB). Send once per connection. Do not wait for the tablet to ask.
+Sent when the device accepts `BEGIN_NEW_SESSION` or `JOIN_SESSION`. The device then latches Connected and stops `DEVICE_ID` heartbeats.
 
-**Payload:**
+Bytes: `deviceId` string.
 
-```
- offset  size  field
- 0       1     protocolVersion    u8  must be 1
- 1       N     firmwareVersion    UTF-8, N = length - 1
-```
+| Field | Type | Notes |
+| --- | --- | --- |
+| `deviceId` | string | Echo of the paired device |
 
-Example: firmware `"1.4.2"` → `length = 6`, bytes `{ 0x01, '1', '.', '4', '.', '2' }`.
+### `0x03` `REGULAR_TELEMETRY`
 
-**State:** `UNLINKED` → `IDLE`. Start the telemetry ticker after this frame.
+10 Hz while In Session, whether or not the frontend is connected. The frontend ignores a frame whose `deviceId` / `sessionId` do not match; ignored frames do not count toward connected status.
 
-**Tablet:** stores the string for Settings → About. Then sends `REGISTER_NODES` for the open plan and `SET_LASER_POWER` for the current brightness.
+Bytes, in order:
 
----
+| Field | Type | Notes |
+| --- | --- | --- |
+| `deviceId` | string | |
+| `sessionId` | string | |
+| `originIsSet` | bool | `false` until origin is set; `false` again on session end. While `false`, the CCU performs no survey or projection. |
+| `lastKnownPose` | Pose | 24 bytes. Cartesian fields are metres. Promo build writes `(0, 0, DEVICE_HEIGHT, 0, 0, 0)` on every frame. `DEVICE_HEIGHT` comes from the CCU config (default `1.276` m). |
+| `effectiveYaw` | f32 | `[0, 2π)`. Promo build: clockwise from due north, `wrap(northOffset − stage)`. See the promo section in `CCU/docs/POC_WORKFLOW.md`. |
+| `moved` | bool | Later product: latches true on IMU motion that is not base rotation. Promo build writes `0` on every frame. |
+| `originSetStatus` | u8 | `OriginSetStatus`. Promo build writes `IDLE` (`0`) on every frame. |
+| `tagFindingStatus` | u8 | `TagFindingStatus`. Promo build writes `POSE_KNOWN` (`0`) on every frame. |
+| `surveyStatus` | u8 | `SurveyStatus` |
+| `projectorStatus` | u8 | `ProjectorStatus` |
+| `projectorRunning` | bool | Follows `PROJECTOR_PLAY` / `PROJECTOR_PAUSE`. Always `false` when `projectorStatus ≠ PROJECTING` |
+| `laserOn` | bool | Emission status |
+| `laserPower` | u8 | Duty cycle, **15–99**. Promo default before the tablet sends one: **30**. |
 
+### `0x04` `SURVEY_RESULT`
 
+One frame per node attempted during `PERFORM_SURVEY`. Fixed payload, **26 bytes**. The last frame of a job has `surveyFinished = true`.
 
-### `0x02` `TELEMETRY`
+| Offset | Size | Field | Type | Notes |
+| --- | --- | --- | --- | --- |
+| 0 | 2 | `id` | u16 | Plan node id |
+| 2 | 4 | `east_m` | f32 | |
+| 6 | 4 | `north_m` | f32 | |
+| 10 | 4 | `up_m` | f32 | Plan up, metres. Device-centre up is `up_m − DEVICE_HEIGHT`. `0` on failure. |
+| 14 | 4 | `corner_inner_angle_rad` | f32 | |
+| 18 | 4 | `corner_orientation_rad` | f32 | |
+| 22 | 1 | `surveyed` | bool | `0` on failure |
+| 23 | 1 | `success` | bool | |
+| 24 | 1 | `errorCode` | u8 | `SurveyError`. `NONE` when `success = 1`. |
+| 25 | 1 | `surveyFinished` | bool | `true` on the final result of this survey |
 
-**Time:** while linked, **10 Hz** recommended (40-byte payload → well under 10 KB/s). Send the first tick right after `FIRMWARE_VERSION`.
+### `0x05` `PROJECTION_READY`
 
-**Payload** (40 bytes, `length = 40`):
+Sent once when `PERFORM_PROJECTION` is accepted, before the first projected point. Lists the nodes that will be drawn, then the nodes that were left out.
 
-```
- offset  size  field
- 0       1     healthOK            bool
- 1       1     moved               bool     IMU latch (relocation, not swivel)
- 2       1     originIsSet         bool
- 3       1     isSurveying         bool
- 4       1     surveyReady         bool
- 5       1     isProjecting        bool
- 6       1     laserOn             bool
- 7       1     connectionStatus    u8       ConnectionStatus
- 8       1     projectionMode      u8       ProjectionMode
- 9       1     laserPower          u8       0–100 PWM duty
- 10      1     poseValid           bool     lastKnownPose is meaningful
- 11      1     reserved            u8       write 0
- 12      4     effectiveYaw        f32      rad in [0, 2π), pose yaw + IMU swivel
- 16      24    lastKnownPose       Pose     ignore fields if poseValid = 0
-```
+Bytes: `count` u16, then `count` `PlanNode` records, then `errorCount` u8, then `errorCount` pairs of `{ id u16, errorCode u8 }`.
 
-**State:** does not change mode. It **reports** mode and flags. If `moved` becomes true, firmware must leave `TAG_SEARCH` / `SURVEYING` / `PROJECTING` for `IDLE`, turn the laser off, and set `surveyReady = 0`, `poseValid = 0`.
-
-**Tablet expects:**
-
-- `healthOK = 0` → show a fault, do not start jobs.
-- `poseValid = 1` → Pose screen: “Pose Identified” (pad hidden). Reposition / Clear origin stay available.
-- `poseValid = 0` → Pose screen: “Pose not known: Click to begin Tag Finding”, unless Tag Finding is already in progress (pad visible after `BEGIN_TAG_SEARCH`).
-- `moved = 1` → “Device moved: reposition”; pose is stale. Tablet leaves Tag Finding and waits for begin again.
-- `originIsSet` is echoed; the tablet does not send a clear-origin frame.
-- `isSurveying` / `isProjecting` → run overlays / halt control.
-- `effectiveYaw` → FOV wedge on the plan.
-- `laserOn` / `laserPower` → header chip and settings slider echo.
-
----
-
-
-
-### `0x03` `SURVEY_POINT`
-
-**Time:** once for **each** node id in the `BEGIN_SURVEY` list, after that vertex has been attempted (about 5 s dwell in the test applet). Send a result even on failure (unknown id, out of FOV, cancelled, or `moved`). Do not clear `isSurveying` until every requested id has had a `SURVEY_POINT`.
-
-**Payload** (27 bytes, `length = 27`):
-
-```
- offset  size  field
- 0       2     nodeId      u16
- 2       1     success     bool   1 = return captured, 0 = not surveyed
- 3       24    pose        Pose   measured pose if success; zeros otherwise
-```
-
-`pose` is the measured return (east/north/up in plan mm, roll/pitch/yaw at capture) when `success = 1`.
-
-**State:** stay in `SURVEYING` until the last requested id is reported, then `SURVEYING` → `IDLE`. `isSurveying = 0`. Recompute `surveyReady`. `projectionMode = Off`. `laserOn = 0`.
-
-**Tablet:** stays on the survey loading screen while `isSurveying` is set (or until every requested id has a result). Each packet updates that vertex to Surveyed or Not visible and advances the progress readout (`done / requested`). It does not send an ack.
+| Field | Type | Notes |
+| --- | --- | --- |
+| `count` | u16 | Nodes that will be projected |
+| `nodes` | PlanNode `[count]` | |
+| `errorCount` | u8 | Nodes omitted from the path |
+| `errors` | `{ id u16, errorCode u8 } [errorCount]` | `ProjectionError` |
 
 ---
 
+## Frontend → device
 
+### `0x10` `CONNECTED`
 
-### `0x04` `PROJECTION_START`
+Keep-alive. Sent at 10 Hz while the UI has seen `REGULAR_TELEMETRY` in the last 5 s. After 5 s without this packet, the device latches disconnected and resumes `DEVICE_ID`. Disconnect does not end the session.
 
-**Time:** once, immediately after `BEGIN_PROJECTION` is accepted, **before** the first dwell. Lists the nodes the device will actually project onto (a subset if some ids are unknown or out of FOV).
+Bytes: `tabletId` string. Promo build: `"pad"`.
 
-**Payload:**
+| Field | Type | Notes |
+| --- | --- | --- |
+| `tabletId` | string | |
 
-```
- offset  size  field
- 0       2     count     u16
- 2       18n   nodes     Node[n]
-```
+### `0x20` `BEGIN_NEW_SESSION`
 
-Positions and corner angles should match the registered plan vertices.
+Start a new session. No payload.
 
-**State:** already `PROJECTING` when this is sent. `isProjecting = 1`, `projectionMode = Project`, `laserOn = 1`. Stay in `PROJECTING` until `SET_PROJECTION_MODE(Off)` or `moved`.
+### `0x21` `JOIN_SESSION`
 
-**Tablet:** treats those ids as Projected and shows the projecting overlay.
+Join an Active session advertised in `DEVICE_ID`.
 
----
+Bytes: `sessionId` string.
 
+| Field | Type | Notes |
+| --- | --- | --- |
+| `sessionId` | string | Must match the advertised session |
 
+### `0x22` `END_SESSION`
 
-## 5. Tablet → device
+End the session. Internal session data is wiped and defaults reinstated.
 
+Bytes: `sessionId` string.
 
+| Field | Type | Notes |
+| --- | --- | --- |
+| `sessionId` | string | |
 
-### `0x10` `SET_LASER_POWER`
+### `0x23` `BEGIN_ORIGIN_SET`
 
-**Time:** Settings brightness slider (tablet range 10–100). Also sent after connect so firmware matches the UI.
+Sent when the operator taps **Set Origin**. No payload.
 
-**Payload:** `length = 1`
+The promo build accepts this while the session is running, the work mode is idle, and `originIsSet = false`. That build is one press and does not align tags. See the promo section in [MACRO_ROUTINES.md](../../CCU/docs/MACRO_ROUTINES.md) and [POC_WORKFLOW.md](../../CCU/docs/POC_WORKFLOW.md).
 
-```
- u8 duty    0–100 PWM percent
-```
+The later product, described in those same documents after the promo section, uses this command to start tag registration (`originSetStatus = WAITING_FOR_TAG`). That product is not this build.
 
-**State:** no mode change. Store duty. Echo it as `laserPower` on the next `TELEMETRY`. If `laserOn` is currently true, apply immediately.
+### `0x24` `BEGIN_TAG_FINDING`
 
----
+Enter the relocation Tag Finding macro routine. No payload.
 
+Later product: accepted only while `originIsSet = true`, after the device is moved. The promo build drops this command in every mode.
 
+### `0x25` `PERFORM_SURVEY`
 
-### `0x11` `SET_PROJECTION_MODE`
+Bytes: `count` u16, then `count` `PlanNode` records (18 bytes each). There is no separate register-nodes command. The tablet sends the vertices in this payload.
 
-**Time:** tablet wants a mode without a new node list, or wants to **halt** a job.
+| Field | Type | Notes |
+| --- | --- | --- |
+| `count` | u16 | |
+| `nodesToSurvey` | PlanNode `[count]` | Nodes of interest |
 
-**Payload:** `length = 1`
+### `0x26` `ABORT_SURVEY`
 
-```
- u8 mode    ProjectionMode
-```
+Cancel an in-progress survey. No payload.
 
-**Effect:**
+### `0x27` `PERFORM_PROJECTION`
 
+Bytes: same as `PERFORM_SURVEY` (`count` u16, then `count` `PlanNode` records).
 
-| Incoming mode | Effect                                                                                                                                       |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Off` (0)     | Cancel `TAG_SEARCH` / `SURVEYING` / `PROJECTING` → `IDLE`. If a survey was running, send `SURVEY_POINT` with success=0 for every id not yet reported. Laser off. |
-| `Survey` (1)  | Only meaningful in `IDLE`; sets `projectionMode` so a following `BEGIN_SURVEY` is unambiguous. Do not start a job by itself.                 |
-| `Project` (2) | Same, for projection. Do not start a job by itself.                                                                                          |
+| Field | Type | Notes |
+| --- | --- | --- |
+| `count` | u16 | |
+| `nodesToProject` | PlanNode `[count]` | Nodes of interest |
 
+### `0x28` `PROJECTOR_PAUSE`
 
----
+Pause an active projection. No payload. `projectorRunning` becomes `false`.
 
+### `0x29` `PROJECTOR_PLAY`
 
+Resume a paused projection. No payload. `projectorRunning` becomes `true` while `projectorStatus = PROJECTING`.
 
-### `0x12` `BEGIN_TAG_SEARCH`
+### `0x2A` `PROJECTION_END`
 
-**Time:** Pose screen, when pose is not known and the operator taps **Click to begin Tag Finding**. Also sent again after each `TAG_FOUND` until two distinct tags are locked (the pad stays up for the next tag). Origin is **not** required.
+Discard the projection path and disable the projector. No payload.
 
-**Payload:** empty (`length = 0`). Which tag is being sought is **not** in this packet; it arrives later as `TAG_FOUND`.
+### `0x2B` `SET_LASER_POWER`
 
-**State:** `IDLE` → `TAG_SEARCH`. Laser on, slew/search for a fiducial (or hold a beam for the operator to walk onto a tag). `projectionMode` may stay `Off`. Timeout is firmware-defined (**8 s** in the test applet); on timeout return to `IDLE` with `laserOn = 0`. The tablet keeps the pad visible until `poseValid` or the operator taps Reposition / Clear origin.
+Bytes: `laserDutyCycle` u8. A value outside **15–99** drops the frame.
 
-**Tablet then sends:** `NUDGE_BEAM_`* while the operator aims, then `TAG_FOUND` from the pad’s align control.
+| Field | Type | Notes |
+| --- | --- | --- |
+| `laserDutyCycle` | u8 | Duty cycle, **15–99** |
 
----
+### `0x2C` `NUDGE_X`
 
+Bytes: `dx` i16. The promo tablet has no control that sends this. The promo CCU accepts it only while projecting.
 
+| Field | Type | Notes |
+| --- | --- | --- |
+| `dx` | i16 | DAC increment of the X mirror. |
 
-### `0x13` `BEGIN_SURVEY`
+### `0x2D` `NUDGE_Y`
 
-**Time:** Plan screen, Survey on the current selection. Tablet only sends this when it believes the site is posed and the selected nodes are in view; firmware still enforces `surveyReady`.
+Bytes: `dy` i16. Same accept rule as `NUDGE_X`.
 
-**Payload:**
+| Field | Type | Notes |
+| --- | --- | --- |
+| `dy` | i16 | DAC increment of the Y mirror. |
 
-```
- offset  size  field
- 0       2     count     u16
- 2       2n    ids       u16[n]
-```
+### `0x2E` `TAG_ALIGNED`
 
-**State:** `IDLE` and `surveyReady` → `SURVEYING`. `isSurveying = 1`, `surveyReady = 0`, `projectionMode = Survey`, `laserOn = 1`. Walk the list: slew to each registered node, dwell, then send one `SURVEY_POINT`. Unknown ids get `success = 0`. After a result for every requested id, return to `IDLE` (`isSurveying = 0`).
+Later product: the projector is already on the tag. The CCU commands the LiDAR to the same pointing `Angle` (`GalvoModel` / `LidarModel`); origins stay offset. Recorded distance is from the **device centre**, using the rangefinder origin offset owned by `LidarModel`.
 
----
+The promo build drops this command in every mode.
 
+Bytes: `tagId` string.
 
-
-### `0x14` `BEGIN_PROJECTION`
-
-**Time:** Plan screen, Project on the current selection (after a survey in the UI, but firmware may still be asked to project any registered id).
-
-**Payload:** same as `BEGIN_SURVEY` (`u16 count` + `u16 ids[n]`).
-
-**State:** `IDLE`, `originIsSet`, `!moved`, nodes registered → `PROJECTING`. Send `PROJECTION_START` with the nodes that will be projected. `isProjecting = 1`, `projectionMode = Project`, `laserOn = 1`. Cycle / dwell on those aim points until halted.
-
-Unknown ids: omit them from `PROJECTION_START`. If the resulting list is empty, do not enter `PROJECTING`; stay `IDLE` and send no `PROJECTION_START`.
-
----
-
-
-
-### `0x15` `TAG_FOUND`
-
-**Time:** during `TAG_SEARCH`, when the operator taps **TAG n ALIGNED** on the Pose pad. `tagID` is the survey tag index on the Pose screen (`1`, `2`, …), **not** a plan node id.
-
-**Payload:** `length = 2`
-
-```
- u16 tagID
-```
-
-**State:** `TAG_SEARCH` → `IDLE`. Record the current beam / IMU pose against `tagID`. Laser off. If the device now has a usable site pose (firmware policy: **two distinct tags**), set `lastKnownPose` from the current attitude, `originIsSet = 1`, `poseValid = 1`, `moved = 0`, and recompute `surveyReady`. The tablet then hides the pad and shows **Pose Identified**.
-
-If this frame arrives outside `TAG_SEARCH`, ignore it. After the first lock the tablet immediately sends another `BEGIN_TAG_SEARCH` for the second tag.
+| Field | Type | Notes |
+| --- | --- | --- |
+| `tagId` | string | `Tag.id` of the aligned tag |
 
 ---
 
+## Shared types
 
+### `Pose` (24 bytes)
 
-### `0x16` `NUDGE_BEAM_X` / `0x17` `NUDGE_BEAM_Y`
+Site metres and attitude. Angles are radians. The promo build writes `(0, 0, DEVICE_HEIGHT, 0, 0, 0)` in telemetry. `yaw_rad` on a stored pose is not the live heading; live heading is `effectiveYaw`.
 
-**Time:** Pose D-pad, and while projecting if the operator trims the spot. Fine step is 0.05°, coarse is 0.5°. The payload is the **delta already scaled** (signed degrees).
+| Offset | Size | Field | Type |
+| --- | --- | --- | --- |
+| 0 | 4 | `east_m` | f32 |
+| 4 | 4 | `north_m` | f32 |
+| 8 | 4 | `up_m` | f32 |
+| 12 | 4 | `roll_rad` | f32 |
+| 16 | 4 | `pitch_rad` | f32 |
+| 20 | 4 | `yaw_rad` | f32 |
 
-**Payload:** `length = 4`
+### `PlanNode` (18 bytes)
 
-```
- f32 dx    azimuth delta, deg   (X)   positive = CCW as seen from above
- f32 dy    elevation delta, deg (Y)   positive = up
-```
+A plan vertex. Carried by `PERFORM_SURVEY`, `PERFORM_PROJECTION`, and `PROJECTION_READY`. The tablet maps a label such as `"V01"` to `id = 1`. Firmware never sees the string.
 
-**State:** apply to the beam immediately. Does not change mode. Do **not** set `moved` (this is turret motion). `effectiveYaw` may change for an X nudge if azimuth is the base/turret yaw. Ignore during `SURVEYING` so a capture is not disturbed.
+| Offset | Size | Field | Type |
+| --- | --- | --- | --- |
+| 0 | 2 | `id` | u16 |
+| 2 | 4 | `east_m` | f32 |
+| 6 | 4 | `north_m` | f32 |
+| 10 | 4 | `corner_inner_angle_rad` | f32 |
+| 14 | 4 | `corner_orientation_rad` | f32 |
 
----
+Both angles are radians in `[0, 2π)`. `corner_inner_angle_rad` is the acute angle between the two walls (`≤ π/2`). `corner_orientation_rad` is clockwise from north to the first hand.
 
+### `Angle`
 
+Azimuth and elevation of the projector beam from the **top** galvo mirror (beam-exit mirror). Not from the device centre (bottom-mirror middle).
 
-### `0x18` `SET_ORIGIN`
+| Field | Type | Notes |
+| --- | --- | --- |
+| `azimuth` | float | |
+| `elevation` | float | |
 
-**Time:** optional. The Pose screen’s primary path is Tag Finding, not this command. The test applet can still inject it. The tablet ViewModel still knows how to send it, but the UI does not.
+### `Tag`
 
-**Payload:** `length = 24` — one `Pose`. A typical inject is `(east = 0, north = 0, up = 0, roll = 0, pitch = 0, yaw = …)`. Prefer the IMU attitude at receipt if it is more accurate; then echo that in `lastKnownPose`.
+Distances are from the **device centre** (bottom-mirror middle) to the tag. `LidarModel` applies the rangefinder origin offset it owns — not raw LiDAR range, not from the top galvo mirror.
 
-**State:** from `IDLE` or `TAG_SEARCH` (search is cancelled). Set origin, `originIsSet = 1`, `lastKnownPose =` that pose, `poseValid = 1`, `moved = 0`, `effectiveYaw =` that yaw (wrapped to `[0, 2π)`). Recompute `surveyReady`. Because `poseValid` becomes 1, a connected tablet treats pose as identified and hides the Tag Finding pad.
-
----
-
-
-
-### `0x19` `REGISTER_NODES`
-
-**Time:**
-
-1. After `FIRMWARE_VERSION` on a new connection (open plan).
-2. Whenever the operator opens or imports a different plan.
-
-**Payload:**
-
-```
- offset  size  field
- 0       2     count     u16
- 2       18n   nodes     Node[n]
-```
-
-This **replaces** the entire node table. `n = 0` clears it (`surveyReady` becomes 0).
-
-**State:** only in `IDLE`. Drop any previous survey measurements keyed by old ids. Coordinates are plan millimetres; firmware transforms them with `lastKnownPose` / `effectiveYaw` when aiming.
-
-If `2 + 18n > 247`, split across multiple frames using the optional chunk flags in §7. Typical site plans (≤ 13 vertices) fit in one ESP-NOW frame.
+| Field | Type | Notes |
+| --- | --- | --- |
+| `id` | string | Stable tag identity |
+| `newAngle` | Angle | Latest projector alignment (relocation Tag Finding) |
+| `prevAngle` | Angle | Reference projector alignment (written during Origin Set; previous `newAngle` after a later alignment) |
+| `newDistance` | float | Latest range from the device centre (relocation Tag Finding) |
+| `prevDistance` | float | Reference range from the device centre (written during Origin Set; shifts with `newAngle` → `prevAngle`) |
 
 ---
 
+## Enumerations
 
+These are payload enums, **not** command bytes. Values may overlap cmd bytes; they live in typed fields.
 
-## 6. Session sequences
+### `SurveyError` (`uint8`)
 
+On `SURVEY_RESULT.errorCode`. `NONE` when `success = 1`.
 
+| Value | Name | Meaning |
+| --- | --- | --- |
+| `0` | `NONE` | Success |
+| `1` | `NOT_VISIBLE` | No range in the dwell window |
+| `2` | `OUT_OF_FOV` | Node is outside the wedge or the 13 m range |
+| `3` | `ABORTED` | Survey cancelled, or the session ended mid-job |
 
-### Link up
+### `ProjectionError` (`uint8`)
 
-```
- marker                         tablet
-   |-- FIRMWARE_VERSION -------->|
-   |-- TELEMETRY (10 Hz) ------->|
-   |<-- REGISTER_NODES ----------|
-   |<-- SET_LASER_POWER ---------|
-   |-- TELEMETRY (originIsSet,    |
-        surveyReady, …) -------->|
-```
+On `PROJECTION_READY` error pairs.
 
+| Value | Name | Meaning |
+| --- | --- | --- |
+| `2` | `OUT_OF_FOV` | Node is outside the current wedge |
+| `4` | `NOT_SURVEYED` | No stored survey result for this id |
 
+### `OriginSetStatus` (`uint8`)
 
-### Tag Finding (identify pose)
+Origin Set only. The UI must not reuse these values as relocation Tag Finding state.
 
-```
-   |<-- BEGIN_TAG_SEARCH --------|     TAG_SEARCH, laser on
-   |<-- NUDGE_BEAM_X/Y ----------|     optional (Pose pad)
-   |<-- TAG_FOUND (tag 1) -------|     IDLE
-   |<-- BEGIN_TAG_SEARCH --------|     TAG_SEARCH again for the next tag
-   |<-- TAG_FOUND (tag 2) -------|     originIsSet=1, poseValid=1, moved=0
-   |-- TELEMETRY poseValid=1 --->|     tablet: “Pose Identified”, pad hidden
-```
+| Value | Name | Meaning |
+| --- | --- | --- |
+| `0` | `IDLE` | Origin Set is not running |
+| `1` | `WAITING_FOR_TAG` | Origin Set is active; operator is aligning a tag |
 
-`SET_ORIGIN` is not part of this path. If it is sent, firmware sets `poseValid` immediately and the tablet skips the pad.
+### `TagFindingStatus` (`uint8`)
 
+Relocation Tag Finding only (`BEGIN_TAG_FINDING`). Meaningful when `originIsSet = true`.
 
+| Value | Name | Meaning |
+| --- | --- | --- |
+| `0` | `POSE_KNOWN` | Pose is known |
+| `1` | `COMPUTING` | Solving; UI shows a loading screen |
+| `2` | `WAITING_FOR_TAG` | Relocation Tag Finding routine is active |
 
-### Survey then project
+### `SurveyStatus` (`uint8`)
 
-```
-   |<-- BEGIN_SURVEY [ids] ------|     SURVEYING
-   |-- TELEMETRY isSurveying=1 ->|
-   |-- SURVEY_POINT (id, ok) --->|     one frame per requested id (~5 s)
-   |-- SURVEY_POINT … ---------->|
-   |-- TELEMETRY isSurveying=0 ->|     IDLE after the last result
-   |<-- BEGIN_PROJECTION [ids] --|
-   |-- PROJECTION_START -------->|     PROJECTING
-   |-- TELEMETRY isProjecting=1 >|
-   |<-- SET_PROJECTION_MODE Off -|     halt → IDLE
-```
+| Value | Name | Meaning |
+| --- | --- | --- |
+| `0` | `IDLE` | Not surveying |
+| `1` | `SCANNING` | Looking for a node on the terrain |
 
+### `ProjectorStatus` (`uint8`)
 
-
-### Relocation
-
-IMU sets `moved = 1` → abort job, laser off, `surveyReady = 0`, `poseValid = 0`, every survey tag `aligned = false`. Telemetry is enough for pose. If a survey was running, send `SURVEY_POINT` with success=0 for each id not yet reported, then `isSurveying = 0`. Operator taps Reposition (or **Click to begin Tag Finding**) and runs Tag Finding again.
-
----
-
-
-
-## 7. ESP-NOW size (RegisterNodes chunks)
-
-ESP-NOW max payload is 250 bytes → max `length` = 247 if the dongle does not reassemble.
-
-`REGISTER_NODES` with a leading flags byte is allowed so large plans can be split. If you use chunks, **all** `REGISTER_NODES` frames on that firmware build include the flags byte:
-
-```
- offset  size  field
- 0       1     flags     u8   bit0 = 1 start (clear table first)
-                              bit1 = 1 last chunk (commit)
- 1       2     count     u16  nodes in this chunk
- 3       18n   nodes     Node[n]
-```
-
-Start+last in one frame is a normal small plan. Until `last` is set, do not use the table for aiming. `SURVEY_POINT` is 27 bytes and always fits. `BEGIN_SURVEY` / `BEGIN_PROJECTION` / `PROJECTION_START` for v1 are assumed to fit in one 250-byte datagram (about 120 ids, or ~13 projection nodes). Larger jobs are out of scope until the dongle reassembles.
+| Value | Name | Meaning |
+| --- | --- | --- |
+| `0` | `IDLE` | Not projecting |
+| `1` | `COMPUTING_PATH` | Building the projection pathway |
+| `2` | `PROJECTING` | Path is active (play/pause via `projectorRunning`) |
 
 ---
 
+## Copy-paste catalog
 
+```
+// Device → frontend packets
+DEVICE_ID            = 0x01
+PAIRING_ACCEPTED     = 0x02
+REGULAR_TELEMETRY    = 0x03
+SURVEY_RESULT        = 0x04
+PROJECTION_READY     = 0x05
 
-## 8. Implementation notes
+// Frontend → device packets
+CONNECTED            = 0x10
 
-- Pack by hand or with `__attribute__((packed))`. Do not send C structs with padding.
-- Node ids are unsigned 16-bit. Do not reuse an id for a different vertex while that plan is loaded.
-- `laserOn` is owned by firmware (search / survey / project). There is no separate laser-on command. Duty is owned by the tablet via `SET_LASER_POWER`.
-- Pose is identified by Tag Finding (`BEGIN_TAG_SEARCH` + two `TAG_FOUND`), not by a prior `SET_ORIGIN`. `SET_ORIGIN` remains on the wire as an optional force-pose.
-- Tablet **Reposition** / **Clear origin** send no frames. A live `TAG_SEARCH` ends on timeout (8 s in the applet) or `SET_PROJECTION_MODE(Off)`.
-- `connectionStatus` is the NOW hop, not USB. USB drop looks like silence on the tablet side.
-- Coordinate units are millimetres. Attitude and node-corner angles are radians in `[0, 2π)`.
-- On the tablet plan view, +east is right and +north is up.
-- v1 has no CRC and no sequence number. If you need them later, add a new `cmd` rather than changing these layouts.
+// Frontend → device commands
+BEGIN_NEW_SESSION    = 0x20
+JOIN_SESSION         = 0x21
+END_SESSION          = 0x22
+BEGIN_ORIGIN_SET     = 0x23
+BEGIN_TAG_FINDING    = 0x24
+PERFORM_SURVEY       = 0x25
+ABORT_SURVEY         = 0x26
+PERFORM_PROJECTION   = 0x27
+PROJECTOR_PAUSE      = 0x28
+PROJECTOR_PLAY       = 0x29
+PROJECTION_END       = 0x2A
+SET_LASER_POWER      = 0x2B
+NUDGE_X              = 0x2C
+NUDGE_Y              = 0x2D
+TAG_ALIGNED          = 0x2E
 
+// Reserved
+DONGLE_PAIRING       = 0xE5   // do not use
+```

@@ -303,25 +303,52 @@ fun ConnectionDialog(state: SmartMarkerState, vm: SmartMarkerViewModel) {
             markBottomRight = true
         ) {
             Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                val listed = state.deviceName
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.size(10.dp).background(if (state.link) SmColors.accent else SmColors.bad))
+                    Box(Modifier.size(10.dp).background(if (listed != null) SmColors.accent else SmColors.bad))
                     Text(
-                        if (state.link) "Marker connected" else "Marker disconnected",
+                        listed ?: if (state.link) "Waiting for device" else "Marker disconnected",
                         fontFamily = BarlowCondensed,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 20.sp
                     )
                 }
                 Text(
-                    if (state.link) {
-                        "The tablet is talking to the Smart Marker over the dongle in the USB-C port."
-                    } else {
-                        "Plug the dongle into the USB-C port, or press reconnect."
+                    when {
+                        listed == null && state.link ->
+                            "Connected to the marker. Waiting for the advertisement."
+                        listed == null ->
+                            "Join the phone hotspot, or press reconnect."
+                        state.seeingTelemetry ->
+                            if (state.sessionActive) "Session active. Telemetry is on."
+                            else "Telemetry is on."
+                        state.sessionActive -> "Session active. No telemetry."
+                        else -> "Session idle. No telemetry."
                     },
                     fontFamily = Barlow,
                     fontSize = 13.sp,
                     color = SmColors.ink.copy(alpha = 0.68f),
                     lineHeight = 20.sp
+                )
+                SmButton(
+                    "Start session",
+                    vm::startSession,
+                    enabled = listed != null && !state.sessionActive,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                SmButton(
+                    "Join session",
+                    vm::joinSession,
+                    style = SmButtonStyle.Secondary,
+                    enabled = listed != null && state.sessionActive,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                SmButton(
+                    "End session",
+                    vm::endSession,
+                    style = SmButtonStyle.Ghost,
+                    enabled = listed != null && state.sessionActive,
+                    modifier = Modifier.fillMaxWidth()
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                     SmButton("Close", vm::closeConn, style = SmButtonStyle.Secondary)

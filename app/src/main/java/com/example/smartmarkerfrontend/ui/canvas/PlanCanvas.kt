@@ -29,6 +29,7 @@ import com.example.smartmarkerfrontend.data.NodeStatus
 import com.example.smartmarkerfrontend.data.SmartMarkerState
 import com.example.smartmarkerfrontend.data.panForWorldAtScreen
 import com.example.smartmarkerfrontend.data.screenToWorld
+import com.example.smartmarkerfrontend.data.wedgeScreenAngle
 import com.example.smartmarkerfrontend.ui.theme.SmColors
 import kotlin.math.cos
 import kotlin.math.max
@@ -124,7 +125,7 @@ fun PlanCanvas(
                                         val pts = active.values.toList()
                                         if (ps != null) {
                                             val dist = (pts[0] - pts[1]).getDistance()
-                                            val k = (ps.scale * (dist / ps.dist)).coerceIn(0.01f, 8f)
+                                            val k = (ps.scale * (dist / ps.dist)).coerceIn(10f, 8000f)
                                             val m = Offset((pts[0].x + pts[1].x) / 2f, (pts[0].y + pts[1].y) / 2f)
                                             val world = screenToWorld(ps.mid, ps.scale, ps.pan)
                                             dragged = true
@@ -159,7 +160,7 @@ fun PlanCanvas(
 }
 
 private fun DrawScope.drawGrid(state: SmartMarkerState) {
-    val gp = max(14f, 1000f * state.scale)
+    val gp = max(14f, state.scale)
     val x0 = state.pan.x % gp
     val y0 = state.pan.y % gp
     val color = SmColors.ink.copy(alpha = 0.07f)
@@ -223,9 +224,10 @@ private const val MARKER_TIP_PX = 64f
 private const val MARKER_BASE_PX = 36f
 
 private fun DrawScope.drawFov(state: SmartMarkerState) {
-    val origin = state.worldToScreen(state.geometry.marker.x, state.geometry.marker.y)
+    val origin = state.worldToScreen(0f, 0f)
     val fr = com.example.smartmarkerfrontend.data.DemoPlans.RANGE * state.scale
-    val head = state.headingRad
+    val yaw = state.deviceYawRad
+    val head = if (yaw != null) wedgeScreenAngle(yaw) else state.headingRad
     val half = com.example.smartmarkerfrontend.data.DemoPlans.HALF_FOV
     fun pt(from: Offset, a: Float, r: Float) = Offset(from.x + r * cos(a), from.y - r * sin(a))
     val tip = pt(origin, head, MARKER_TIP_PX)

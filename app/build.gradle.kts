@@ -54,6 +54,18 @@ chaquopy {
     }
 }
 
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    listOf("ccu.h2_0.file", "ccu.h2_1.file", "ccu.h2_4.file").forEach { prop ->
+        val marker = providers.gradleProperty(prop).orNull
+        if (!marker.isNullOrEmpty()) {
+            systemProperty(
+                prop,
+                project.layout.projectDirectory.file(marker).asFile.absolutePath
+            )
+        }
+    }
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)

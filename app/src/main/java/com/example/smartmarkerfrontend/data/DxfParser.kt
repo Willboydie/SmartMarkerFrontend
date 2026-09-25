@@ -22,8 +22,9 @@ import kotlin.math.min
  * ```
  *
  * `plan_line_points` is a list of polylines. Each polyline is a list of
- * `[x, y]` world millimetres, e.g.
+ * `[x, y]` drawing millimetres, e.g.
  * `[[[0, 0], [5000, 0]], [[0, 0], [0, 3000]]]`.
+ * The program stores metres, so those values are divided by 1000 on import.
  *
  * `nodes` is a list of `{"id": "V01", "x": 0.0, "y": 0.0}`.
  * `(id, x, y)` or `(x, y)` tuples are also accepted.
@@ -32,6 +33,7 @@ import kotlin.math.min
  * 2-tuple.
  */
 object DxfParser {
+    private const val DXF_MM_TO_M = 0.001f
 
     data class Extracted(
         val planLinePoints: List<List<Offset>>,
@@ -53,10 +55,14 @@ object DxfParser {
         planLinePoints: List<List<Offset>>,
         nodes: List<MarkerNode>
     ): Extracted {
-        val geometry = geometryFrom(planLinePoints, nodes)
+        val metresLines = planLinePoints.map { line ->
+            line.map { Offset(it.x * DXF_MM_TO_M, it.y * DXF_MM_TO_M) }
+        }
+        val metresNodes = nodes.map { it.copy(x = it.x * DXF_MM_TO_M, y = it.y * DXF_MM_TO_M) }
+        val geometry = geometryFrom(metresLines, metresNodes)
         return Extracted(
-            planLinePoints = planLinePoints,
-            nodes = nodes.map { it.withPlanCorners(geometry) },
+            planLinePoints = metresLines,
+            nodes = metresNodes.map { it.withPlanCorners(geometry) },
             geometry = geometry
         )
     }
@@ -158,8 +164,8 @@ object DxfParser {
     ): PlanGeometry {
         val outlines = planLinePoints.map { pts ->
             val closed = pts.size >= 3 &&
-                abs(pts.first().x - pts.last().x) < 0.5f &&
-                abs(pts.first().y - pts.last().y) < 0.5f
+                abs(pts.first().x - pts.last().x) < 0.0005f &&
+                abs(pts.first().y - pts.last().y) < 0.0005f
             val trimmed = if (closed) pts.dropLast(1) else pts
             Polyline(trimmed, closed)
         }
@@ -167,7 +173,7 @@ object DxfParser {
             addAll(nodes.map { Offset(it.x, it.y) })
             outlines.forEach { addAll(it.points) }
         }
-        val bounds = boundsOf(allPts) ?: Rect(0f, 0f, 1000f, 1000f)
+        val bounds = boundsOf(allPts) ?: Rect(0f, 0f, 1f, 1f)
         val pad = max(bounds.width, bounds.height) * 0.04f
         val marker = Offset(bounds.center.x, bounds.top - bounds.height * 0.08f)
         return PlanGeometry(
@@ -202,13 +208,13 @@ object DxfParser {
             maxY = max(maxY, p.y)
         }
         if (!minX.isFinite()) return null
-        if (abs(maxX - minX) < 1f) {
-            maxX += 500f
-            minX -= 500f
+        if (abs(maxX - minX) < 0.001f) {
+            maxX += 0.5f
+            minX -= 0.5f
         }
-        if (abs(maxY - minY) < 1f) {
-            maxY += 500f
-            minY -= 500f
+        if (abs(maxY - minY) < 0.001f) {
+            maxY += 0.5f
+            minY -= 0.5f
         }
         return Rect(minX, minY, maxX, maxY)
     }

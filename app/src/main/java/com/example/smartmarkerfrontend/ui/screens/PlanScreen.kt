@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.smartmarkerfrontend.data.NodeStatus
+import com.example.smartmarkerfrontend.data.planBanner
 import com.example.smartmarkerfrontend.data.SmartMarkerState
 import com.example.smartmarkerfrontend.data.formatCoord
 import com.example.smartmarkerfrontend.ui.SmartMarkerViewModel
@@ -141,7 +142,7 @@ fun PlanScreen(state: SmartMarkerState, vm: SmartMarkerViewModel) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            val bar = (1000f * state.scale).coerceIn(12f, 220f)
+            val bar = state.scale.coerceIn(12f, 220f)
             Box(
                 Modifier
                     .width(with(density) { bar.toDp() })
@@ -149,7 +150,7 @@ fun PlanScreen(state: SmartMarkerState, vm: SmartMarkerViewModel) {
                     .border(1.dp, SmColors.ink)
             )
             Text(
-                text = "1 m  ·  1:${(1f / state.scale * 3.2f).roundToInt()}",
+                text = "1 m  ·  1:${(3200f / state.scale).roundToInt()}",
                 fontFamily = Barlow,
                 fontSize = 11.sp,
                 color = SmColors.ink
@@ -196,8 +197,7 @@ private fun ActionStack(
             val n = state.projecting.size
             "Beam live on $n ${if (n == 1) "point" else "points"} — project the beam, then halt."
         }
-        !state.posed && state.hadPose -> "Device moved — Find Tags on the Pose screen before surveying or projecting."
-        !state.posed -> "Origin not set — Set Origin on the Pose screen before surveying or projecting."
+        planBanner(state.posed) != null -> planBanner(state.posed)!!
         hidden.isNotEmpty() -> "Out of the marker’s view: ${hidden.joinToString { it.id }} — turn the marker to bring them in."
         sel.isNotEmpty() && anyUnsurveyed ->
             "Survey before projecting: ${sel.filter { it.status == NodeStatus.Open || it.status == NodeStatus.NotVisible }.joinToString { it.id }}"

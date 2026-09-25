@@ -17,6 +17,8 @@ class DxfParserTest {
 
         assertEquals(1, extracted.planLinePoints.size)
         assertEquals(4, extracted.planLinePoints[0].size)
+        assertEquals(1f, extracted.nodes.single().x, 0.0001f)
+        assertEquals(2f, extracted.nodes.single().y, 0.0001f)
         assertEquals("V01", extracted.nodes.single().id)
         assertEquals(NodeStatus.Open, extracted.nodes.single().status)
         assertTrue(extracted.geometry.outlines.isNotEmpty())

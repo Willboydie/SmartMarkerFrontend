@@ -45,12 +45,18 @@ fun SettingsScreen(state: SmartMarkerState, vm: SmartMarkerViewModel) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(22.dp)) {
             SettingsCard("Units & plan") {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Coordinate units", fontFamily = Barlow, fontSize = 12.sp, color = SmColors.ink.copy(alpha = 0.7f))
+                    Text("Plan display", fontFamily = Barlow, fontSize = 12.sp, color = SmColors.ink.copy(alpha = 0.7f))
                     Row {
                         SegButton("mm", state.units == Units.Millimetres, { vm.setUnits(Units.Millimetres) })
                         SegButton("m", state.units == Units.Metres, { vm.setUnits(Units.Metres) })
                         SegButton("ft", state.units == Units.Feet, { vm.setUnits(Units.Feet) })
                     }
+                    Text(
+                        "Display only. The plan is stored in metres.",
+                        fontFamily = Barlow,
+                        fontSize = 11.sp,
+                        color = SmColors.ink.copy(alpha = 0.55f)
+                    )
                 }
             }
             SettingsCard("Connection") {

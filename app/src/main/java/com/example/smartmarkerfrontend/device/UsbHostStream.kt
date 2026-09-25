@@ -12,7 +12,7 @@ import java.io.IOException
 /**
  * USB host CDC (or vendor UART) pipe for the ESP-NOW / Wi-Fi dongle.
  *
- * Hosting rules from docs/WIFI_DONGLE_HOSTING.md: 921600 8N1, DTR/RTS idle,
+ * Hosting rules from docs/WIFI_DONGLE_HOSTING.md: 921600 8N1, DTR set, RTS clear.
  * raw binary frames. Same [DeviceStream] contract as [AdbDebugStream].
  */
 class UsbHostStream(
@@ -84,7 +84,7 @@ class UsbHostStream(
                     TAG,
                     "CDC open vid=0x${device.vendorId.toString(16)} " +
                         "pid=0x${device.productId.toString(16)} " +
-                        "dataIf=${pipe.dataIntf.id} baud=${DeviceLinkConfig.CDC_BAUD} DTR=0 RTS=0"
+                        "dataIf=${pipe.dataIntf.id} baud=${DeviceLinkConfig.CDC_BAUD} DTR=1 RTS=0"
                 )
                 return UsbHostStream(connection, claimed, pipe.inEp, pipe.outEp)
             } catch (t: Throwable) {
@@ -156,7 +156,7 @@ class UsbHostStream(
             connection.controlTransfer(
                 CDC_REQTYPE_HOST_TO_DEVICE,
                 CDC_SET_CONTROL_LINE_STATE,
-                DeviceLinkConfig.CDC_LINE_STATE_IDLE,
+                DeviceLinkConfig.CDC_LINE_STATE_DTR,
                 index,
                 null,
                 0,

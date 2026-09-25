@@ -3,6 +3,7 @@ package com.example.smartmarkerfrontend.ui
 import android.app.Application
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.OpenableColumns
 import androidx.compose.ui.geometry.Offset
 import androidx.lifecycle.AndroidViewModel
@@ -14,17 +15,19 @@ import com.example.smartmarkerfrontend.data.EmptyPlanGeometry
 import com.example.smartmarkerfrontend.data.MoveStep
 import com.example.smartmarkerfrontend.data.NodeStatus
 import com.example.smartmarkerfrontend.data.PlanFile
-import com.example.smartmarkerfrontend.data.Pose
+import com.example.smartmarkerfrontend.data.PromoSession
+import com.example.smartmarkerfrontend.data.PlanNode
+import com.example.smartmarkerfrontend.data.ProjectorStatus
 import com.example.smartmarkerfrontend.data.RunKind
 import com.example.smartmarkerfrontend.data.RunProgress
 import com.example.smartmarkerfrontend.data.SmartMarkerState
+import com.example.smartmarkerfrontend.data.SurveyStatus
 import com.example.smartmarkerfrontend.data.Tag
 import com.example.smartmarkerfrontend.data.TabletCommand
 import com.example.smartmarkerfrontend.data.Units
 import com.example.smartmarkerfrontend.data.degrees
 import com.example.smartmarkerfrontend.data.fitScale
 import com.example.smartmarkerfrontend.data.panForWorldAtScreen
-import com.example.smartmarkerfrontend.data.wrapTwoPi
 import com.example.smartmarkerfrontend.device.NodeIds
 import com.example.smartmarkerfrontend.device.UsbDongleManager
 import kotlinx.coroutines.Dispatchers
@@ -46,13 +49,13 @@ import kotlin.math.roundToInt
 class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("smart_marker", Context.MODE_PRIVATE)
     private val dongle = UsbDongleManager(app, viewModelScope)
+    private val promo = PromoSession()
 
     private val _state = MutableStateFlow(initialState())
     val state: StateFlow<SmartMarkerState> = _state.asStateFlow()
 
     private var runJob: Job? = null
     private var moved = false
-    private var deviceMovedLatched = false
 
     init {
         dongle.autoReconnect = prefs.getBoolean("autoRe", true)
@@ -61,10 +64,29 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             dongle.connected.collect { up ->
-                _state.update { it.copy(link = up) }
+                _state.update { st ->
+                    if (up) st.copy(link = true)
+                    else st.copy(
+                        link = false,
+                        deviceName = null,
+                        sessionActive = false,
+                        seeingTelemetry = false
+                    )
+                }
             }
         }
         if (dongle.autoReconnect) dongle.start()
+        viewModelScope.launch {
+            while (isActive) {
+                delay(100)
+                val now = SystemClock.elapsedRealtime()
+                if (promo.connectedDue(now)) {
+                    dongle.send(TabletCommand.Connected("pad"))
+                } else if (_state.value.seeingTelemetry) {
+                    _state.update { it.copy(seeingTelemetry = false, connOpen = true) }
+                }
+            }
+        }
     }
 
     fun onHostResume() {
@@ -149,8 +171,8 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun clampScale(scale: Float): Float {
         val fit = fitFloor()
-        val min = (fit * 0.2f).coerceAtLeast(0.004f)
-        val max = (fit * 30f).coerceAtMost(12f)
+        val min = (fit * 0.2f).coerceAtLeast(4f)
+        val max = (fit * 30f).coerceAtMost(12000f)
         return scale.coerceIn(min, max)
     }
 
@@ -248,7 +270,7 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         val ids = st.selectedIds
         if (ids.isEmpty() || st.posed.not() || st.run != null || st.projecting != null) return
         if (ids.any { id -> st.nodes.firstOrNull { it.id == id }?.let { !st.inView(it) } == true }) return
-        dongle.send(TabletCommand.BeginSurvey(ids))
+        dongle.send(TabletCommand.PerformSurvey(packetsFor(ids, st.nodes)))
         runJob?.cancel()
         _state.update {
             it.copy(
@@ -263,15 +285,20 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
                 if (!isActive) return@launch
                 val node = _state.value.nodes.firstOrNull { it.id == id }
                 val success = node != null && id != "V07"
-                val pose = Pose(
-                    eastMm = node?.x ?: 0f,
-                    northMm = node?.y ?: 0f,
-                    upMm = 0f,
-                    rollRad = 0f,
-                    pitchRad = 0f,
-                    yawRad = wrapTwoPi(Math.toRadians(_state.value.az.toDouble()).toFloat())
+                applySurveyResult(
+                    DeviceTelemetry.SurveyResult(
+                        id = NodeIds.toWire(id),
+                        eastM = node?.x ?: 0f,
+                        northM = node?.y ?: 0f,
+                        upM = 0f,
+                        cornerInnerAngleRad = node?.cornerInnerAngleRad ?: 0f,
+                        cornerOrientationRad = node?.cornerOrientationRad ?: 0f,
+                        surveyed = success,
+                        success = success,
+                        errorCode = if (success) 0 else 1,
+                        surveyFinished = id == ids.last()
+                    )
                 )
-                applySurveyPoint(DeviceTelemetry.SurveyPoint(id, success, pose))
             }
             _state.update { cur ->
                 val run = cur.run
@@ -284,13 +311,13 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleProject() {
         val st = _state.value
         if (st.projecting != null) {
-            dongle.send(TabletCommand.SetProjectionMode(0))
+            dongle.send(TabletCommand.ProjectionEnd)
             _state.update { it.copy(projecting = null) }
             return
         }
         val ids = st.selectedIds
         if (ids.isEmpty()) return
-        dongle.send(TabletCommand.BeginProjection(ids))
+        dongle.send(TabletCommand.PerformProjection(packetsFor(ids, st.nodes)))
         if (dongle.connected.value) return
         _state.update { cur ->
             cur.copy(
@@ -302,7 +329,7 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelRun() {
         runJob?.cancel()
-        dongle.send(TabletCommand.SetProjectionMode(0))
+        dongle.send(TabletCommand.AbortSurvey)
         _state.update { it.copy(run = null, isSurveying = false) }
     }
 
@@ -332,7 +359,7 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
     fun beginTagSearch() {
         val st = _state.value
         if (st.posed || st.locking) return
-        dongle.send(TabletCommand.BeginTagSearch)
+        dongle.send(TabletCommand.BeginTagFinding)
         _state.update { it.copy(locking = true, computing = false) }
     }
 
@@ -341,7 +368,7 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         if (!st.locking || st.posed) return
         val tag = st.tags.firstOrNull { it.id == st.curTag } ?: return
         if (tag.aligned) return
-        dongle.send(TabletCommand.TagFound(st.curTag))
+        dongle.send(TabletCommand.TagAligned(st.curTag.toString()))
         var needNextSearch = false
         _state.update { cur ->
             val tags = cur.tags.map { if (it.id == cur.curTag) it.copy(aligned = true) else it }
@@ -355,7 +382,7 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
                 computing = false
             )
         }
-        if (needNextSearch) dongle.send(TabletCommand.BeginTagSearch)
+        if (needNextSearch) dongle.send(TabletCommand.BeginTagFinding)
     }
 
     fun nudge(dxAz: Float, dyEl: Float) {
@@ -363,21 +390,28 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         _state.update { st ->
             val az = ((st.az + dxAz * step) * 100f).roundToInt() / 100f
             val el = ((st.el + dyEl * step) * 100f).roundToInt() / 100f
-            if (dxAz != 0f) dongle.send(TabletCommand.NudgeBeamX(dxAz * step))
-            if (dyEl != 0f) dongle.send(TabletCommand.NudgeBeamY(dyEl * step))
+            if (dxAz != 0f) dongle.send(TabletCommand.NudgeX((dxAz * step).roundToInt()))
+            if (dyEl != 0f) dongle.send(TabletCommand.NudgeY((dyEl * step).roundToInt()))
             st.copy(az = az, el = el)
         }
     }
 
+    fun startSession() {
+        dongle.send(promo.startSession())
+    }
+
+    fun joinSession() {
+        dongle.send(promo.joinSession())
+    }
+
+    fun endSession() {
+        dongle.send(promo.endSession())
+        _state.update { it.copy(posed = false, hadPose = false, locking = false) }
+    }
+
     fun setOrigin() {
-        val st = _state.value
-        if (st.posed || st.locking) return
-        val yaw = wrapTwoPi(Math.toRadians(st.az.toDouble()).toFloat())
-        _state.update { it.copy(hadPose = true, locking = true, computing = false) }
-        dongle.send(
-            TabletCommand.SetOrigin(Pose(0f, 0f, 0f, 0f, 0f, yaw)),
-            TabletCommand.BeginTagSearch
-        )
+        if (_state.value.posed) return
+        dongle.send(promo.setOrigin())
     }
 
     fun resetPose() {
@@ -413,9 +447,6 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
             val chosen = saved.first { it.name == name }
             val sized = st.canvasSize
             val (s, p) = if (sized.x > 8f) fitScale(sized.x, sized.y, chosen.geometry) else st.scale to st.pan
-            dongle.send(
-                TabletCommand.RegisterNodes(chosen.nodes.map { it.toPacket() })
-            )
             st.copy(
                 files = saved,
                 nodes = chosen.nodes,
@@ -466,9 +497,6 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
                     val (s, p) = if (sized.x > 8f) {
                         fitScale(sized.x, sized.y, extracted.geometry)
                     } else st.scale to st.pan
-                    dongle.send(
-                        TabletCommand.RegisterNodes(extracted.nodes.map { it.toPacket() })
-                    )
                     st.copy(
                         files = listOf(file) + rest,
                         nodes = extracted.nodes,
@@ -494,16 +522,22 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun applyDeviceTelemetry(msg: DeviceTelemetry) {
         when (msg) {
-            is DeviceTelemetry.Handshake -> {
-                _state.update { it.copy(firmwareVersion = msg.firmwareVersion) }
-                val st = _state.value
-                dongle.send(TabletCommand.RegisterNodes(st.nodes.map { it.toPacket() }))
-                dongle.send(TabletCommand.SetLaserPower(st.beam))
+            is DeviceTelemetry.DeviceId -> {
+                promo.noteAdvertised(msg.sessionId)
+                _state.update { st ->
+                    val firstAdvertisement = st.deviceName == null
+                    st.copy(
+                        deviceName = msg.displayName,
+                        sessionActive = msg.sessionActive,
+                        connOpen = st.connOpen || firstAdvertisement
+                    )
+                }
             }
+            is DeviceTelemetry.PairingAccepted -> Unit
             is DeviceTelemetry.Regular -> applyRegularTelemetry(msg)
-            is DeviceTelemetry.SurveyPoint -> applySurveyPoint(msg)
-            is DeviceTelemetry.ProjectionStart -> {
-                val ids = msg.projectedNodes.map { it.id }
+            is DeviceTelemetry.SurveyResult -> applySurveyResult(msg)
+            is DeviceTelemetry.ProjectionReady -> {
+                val ids = msg.nodes.map { it.id }
                 _state.update { st ->
                     st.copy(
                         projecting = ids,
@@ -518,13 +552,14 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun applySurveyPoint(msg: DeviceTelemetry.SurveyPoint) {
+    private fun applySurveyResult(msg: DeviceTelemetry.SurveyResult) {
+        val wireId = NodeIds.fromWire(msg.id)
         _state.update { st ->
             val run = st.run
             if (run == null || run.kind != RunKind.Survey) return@update st
-            val planId = st.nodes.firstOrNull { sameNode(it.id, msg.nodeId) }?.id
-                ?: run.ids.firstOrNull { sameNode(it, msg.nodeId) }
-                ?: msg.nodeId
+            val planId = st.nodes.firstOrNull { sameNode(it.id, wireId) }?.id
+                ?: run.ids.firstOrNull { sameNode(it, wireId) }
+                ?: wireId
             val nodes = st.nodes.map { n ->
                 if (sameNode(n.id, planId)) {
                     n.copy(status = if (msg.success) NodeStatus.Surveyed else NodeStatus.NotVisible)
@@ -542,37 +577,28 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun applyRegularTelemetry(msg: DeviceTelemetry.Regular) {
+        val now = SystemClock.elapsedRealtime()
+        if (!promo.acceptTelemetry(msg.deviceId, msg.sessionId, msg.originIsSet, msg.moved, now)) {
+            return
+        }
         val azDeg = Math.toDegrees(msg.effectiveYaw.toDouble()).toFloat()
-        val becameMoved = msg.moved && !deviceMovedLatched
-        deviceMovedLatched = msg.moved
-        val poseValid = msg.lastKnownPose != null
         _state.update { st ->
-            val projecting = if (!msg.isProjecting) null else st.projecting
-            val tags = if (becameMoved) st.tags.map { it.copy(aligned = false) } else st.tags
+            val projecting = if (msg.projectorStatus != ProjectorStatus.PROJECTING) null else st.projecting
             val run = st.run
             val surveyFinished = run != null &&
                 run.kind == RunKind.Survey &&
                 run.reported.size >= run.ids.size &&
-                !msg.isSurveying
+                msg.surveyStatus != SurveyStatus.SCANNING
             st.copy(
+                seeingTelemetry = true,
+                sessionActive = true,
                 laser = msg.laserOn,
-                hadPose = msg.originIsSet || (st.hadPose && !becameMoved),
-                posed = when {
-                    msg.moved -> false
-                    st.locking -> st.posed
-                    poseValid -> true
-                    else -> st.posed
-                },
-                computing = if (becameMoved) false else st.computing,
-                locking = when {
-                    msg.moved -> false
-                    else -> st.locking
-                },
-                tags = tags,
+                hadPose = msg.originIsSet || st.hadPose,
+                posed = promo.posed,
                 deviceYawRad = msg.effectiveYaw,
                 az = azDeg,
                 projecting = projecting,
-                isSurveying = msg.isSurveying,
+                isSurveying = msg.surveyStatus == SurveyStatus.SCANNING,
                 run = if (surveyFinished) null else run
             )
         }
@@ -591,6 +617,9 @@ class SmartMarkerViewModel(app: Application) : AndroidViewModel(app) {
         }
         return uri.lastPathSegment
     }
+
+    private fun packetsFor(ids: List<String>, nodes: List<com.example.smartmarkerfrontend.data.MarkerNode>): List<PlanNode> =
+        ids.mapNotNull { id -> nodes.firstOrNull { it.id == id }?.toPacket() }
 
     private fun sameNode(planId: String, wireId: String): Boolean =
         planId == wireId || NodeIds.toWire(planId) == NodeIds.toWire(wireId)

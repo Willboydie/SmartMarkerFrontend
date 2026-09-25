@@ -23,6 +23,12 @@ object DeviceLinkConfig {
     const val ADB_HOST = "127.0.0.1"
     const val ADB_PORT = 8765
 
+    /** Phone hotspot. The tablet broadcasts [WIFI_FIND] and opens TCP to the reply. */
+    const val WIFI_PORT = 8765
+    const val WIFI_BEACON_PORT = 8766
+    const val WIFI_FIND = "SMFIND"
+    const val WIFI_HERE = "SMHERE"
+
     const val HEADER_SIZE = 3
     const val MAX_FRAME_BYTES = 1024
     const val MAX_PAYLOAD = MAX_FRAME_BYTES - HEADER_SIZE
@@ -34,8 +40,12 @@ object DeviceLinkConfig {
     const val ESPRESSIF_VID = 0x303A
     const val ESPRESSIF_PID = 0x1001
 
-    /** CDC ACM SET_CONTROL_LINE_STATE: DTR=0, RTS=0 (do not hold EN/boot). */
-    const val CDC_LINE_STATE_IDLE = 0
+    /**
+     * CDC ACM SET_CONTROL_LINE_STATE: DTR=1, RTS=0.
+     * The dongle's USB CDC drops host-bound bytes while DTR is clear.
+     * RTS stays clear so the line-state sequence does not enter the bootloader.
+     */
+    const val CDC_LINE_STATE_DTR = 1
 
     fun cdcLineCoding(baud: Int = CDC_BAUD): ByteArray = byteArrayOf(
         (baud and 0xFF).toByte(),
